@@ -846,7 +846,8 @@ onMounted(async () => {
           </div>
         </template>
         <p v-else-if="!metaLoading" class="empty">
-          填写 Riot API key 后点「刷新数据」获取高分段 Meta 榜。
+          暂无 Meta 数据。请在项目根目录运行
+          <code>cargo run --bin crawl_meta</code> 生成 meta.json 后刷新。
         </p>
       </template>
 
