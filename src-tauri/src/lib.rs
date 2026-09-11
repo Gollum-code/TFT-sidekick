@@ -179,7 +179,7 @@ fn get_game_rules() -> Vec<RulesSection> {
             ],
         },
         RulesSection {
-            title: "玩家基础伤害（失败掉血）".into(),
+            title: "玩家伤害（失败掉血）".into(),
             rows: vec![
                 vec!["阶段".into(), "基础掉血".into()],
                 vec!["1-1 ~ 1-4".into(), "0（野怪回合不掉血）".into()],
@@ -187,6 +187,16 @@ fn get_game_rules() -> Vec<RulesSection> {
                 vec!["3-1 ~ 3-7".into(), "3".into()],
                 vec!["4-1 ~ 4-7".into(), "4".into()],
                 vec!["5-1 及以上".into(), "5".into()],
+                vec!["存活敌方单位加成".into(), "每个存活棋子追加伤害（约等于棋子费用，1 费≈2、5 费≈6）".into()],
+            ],
+        },
+        RulesSection {
+            title: "海克斯出现概率（各补丁可能调整）".into(),
+            rows: vec![
+                vec!["海克斯".into(), "白银".into(), "黄金".into(), "棱彩".into()],
+                vec!["第 1 个海克斯".into(), "≈55%".into(), "≈35%".into(), "≈10%".into()],
+                vec!["第 2 个海克斯".into(), "≈40%".into(), "≈50%".into(), "≈10%".into()],
+                vec!["第 3 个海克斯".into(), "≈25%".into(), "≈60%".into(), "≈15%".into()],
             ],
         },
         RulesSection {

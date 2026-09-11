@@ -15,7 +15,7 @@ use thiserror::Error;
 
 use crate::models::{
     ChampionData, EnrichedItem, EnrichedMatch, EnrichedTrait, EnrichedUnit, ItemData, MatchDetail,
-    TraitData, TraitTierData,
+    TraitData, TraitTierData, TraitUnit,
 };
 
 const CDRAGON_URL: &str = "https://raw.communitydragon.org/latest/cdragon/tft/zh_cn.json";
@@ -543,8 +543,28 @@ impl StaticData {
         out
     }
 
-    /// 当前赛季全部羁绊。
+    /// 当前赛季全部羁绊（含成员英雄）。
     pub fn traits(&self) -> Vec<TraitData> {
+        // 构建 羁绊显示名 -> 成员英雄 的映射
+        let mut units_by_name: std::collections::HashMap<&str, Vec<TraitUnit>> =
+            std::collections::HashMap::new();
+        for cid in &self.current_champions {
+            if let Some(c) = self.champions.get(cid) {
+                let unit = TraitUnit {
+                    id: cid.clone(),
+                    name: c.name.clone(),
+                    icon_url: c
+                        .tile_icon
+                        .as_deref()
+                        .map(Self::icon_url)
+                        .unwrap_or_default(),
+                };
+                for tn in &c.traits {
+                    units_by_name.entry(tn.as_str()).or_default().push(unit.clone());
+                }
+            }
+        }
+
         let mut out: Vec<TraitData> = self
             .current_traits
             .iter()
@@ -555,6 +575,10 @@ impl StaticData {
                     icon_url: t.icon.as_deref().map(Self::icon_url).unwrap_or_default(),
                     desc: t.desc.clone(),
                     tiers: t.tiers.clone(),
+                    units: units_by_name
+                        .get(t.name.as_str())
+                        .cloned()
+                        .unwrap_or_default(),
                 })
             })
             .collect();
@@ -595,6 +619,15 @@ mod tests {
         assert!(items.iter().any(|i| !i.composition.is_empty()));
         assert!(champs.iter().any(|c| c.cost > 0 && c.hp > 0.0));
         assert!(traits.iter().any(|t| !t.tiers.is_empty()));
+        // 验证羁绊→英雄映射有效
+        let brawler = traits.iter().find(|t| t.name == "斗士");
+        if let Some(b) = brawler {
+            println!("斗士 units: {}", b.units.len());
+            for u in &b.units {
+                println!("  {} {}", u.name, u.id);
+            }
+            assert!(!b.units.is_empty(), "斗士应有英雄成员");
+        }
 
         if let Some(it) = items.iter().find(|i| !i.composition.is_empty()) {
             println!("sample item: {} <- {:?}", it.name, it.composition);

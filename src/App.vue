@@ -112,12 +112,19 @@ interface TraitTierData {
   style: number;
 }
 
+interface TraitUnit {
+  id: string;
+  name: string;
+  icon_url: string;
+}
+
 interface TraitData {
   id: string;
   name: string;
   icon_url: string;
   desc: string;
   tiers: TraitTierData[];
+  units: TraitUnit[];
 }
 
 interface ShopOddsLevel {
@@ -628,6 +635,11 @@ onMounted(async () => {
                 </span>
               </div>
               <div class="ability-desc">{{ t.desc }}</div>
+              <div v-if="t.units.length > 0" class="trait-units">
+                <span v-for="u in t.units" :key="u.id" class="trait-unit" :title="u.name">
+                  <img v-if="u.icon_url" :src="u.icon_url" :alt="u.name" />
+                </span>
+              </div>
             </div>
           </div>
         </template>
@@ -1794,6 +1806,28 @@ button.small {
   font-weight: 600;
   border-radius: 5px;
   padding: 2px 7px;
+}
+
+.trait-units {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.trait-unit {
+  width: 32px;
+  height: 32px;
+  border-radius: 6px;
+  overflow: hidden;
+  background: #101018;
+}
+
+.trait-unit img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
 }
 
 .odds-note {

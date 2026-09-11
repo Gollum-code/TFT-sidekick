@@ -146,12 +146,20 @@ pub struct TraitTierData {
 }
 
 #[derive(Debug, Clone, Serialize)]
+pub struct TraitUnit {
+    pub id: String,
+    pub name: String,
+    pub icon_url: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
 pub struct TraitData {
     pub id: String,
     pub name: String,
     pub icon_url: String,
     pub desc: String,
     pub tiers: Vec<TraitTierData>,
+    pub units: Vec<TraitUnit>,
 }
 
 #[derive(Debug, Clone, Serialize)]
