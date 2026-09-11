@@ -19,3 +19,8 @@ Thumbs.db
 
 # æœ¬åœ°ç”Ÿæˆæ•°æ®
 lcu-probe-result.json
+
+# ÁÙÊ±²âÊÔÊä³ö
+meta_*.txt
+test_output.txt
+comps.txt
