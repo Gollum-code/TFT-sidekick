@@ -1,0 +1,34 @@
+﻿cargo :    Compiling tft-sidekick v0.1.0 (D:\project\TFTsidekick\src-tauri)
+所在位置 行:2 字符: 1
++ cargo test fetch_and_aggregate_live -- --ignored --nocapture 2>&1 | O ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (   Compiling tf...kick\src-tauri):String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 4.83s
+     Running unittests src\lib.rs (target\debug\deps\tft_sidekick_lib-b510aaf4f20ccd84.exe)
+
+running 1 test
+challenger players: 58
+fetched matches: 30
+comps: 15
+  DA_Riftbeast18 : 56 appearances, win 46.4%, top4 46.4%
+  DA_18_Blossom : 45 appearances, win 60.0%, top4 60.0%
+  DA_18_Elderwood : 36 appearances, win 44.4%, top4 44.4%
+  DA_18_Inferno : 25 appearances, win 64.0%, top4 64.0%
+  DA_18_Rapidfire : 16 appearances, win 43.8%, top4 43.8%
+  DA_18_Hunter : 15 appearances, win 53.3%, top4 53.3%
+  DA_Juggernaut18 : 12 appearances, win 33.3%, top4 33.3%
+  DA_18_Spellweaver : 10 appearances, win 50.0%, top4 50.0%
+  DA_18_Invoker : 9 appearances, win 33.3%, top4 33.3%
+  DA_18_Lunar : 8 appearances, win 50.0%, top4 50.0%
+test riot::tests::fetch_and_aggregate_live ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 4 filtered out; finished in 43.50s
+
+     Running unittests src\main.rs (target\debug\deps\tft_sidekick-5338127f21fa8bf0.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+

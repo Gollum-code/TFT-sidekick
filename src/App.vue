@@ -134,6 +134,11 @@ interface MetaComp {
   top4_rate: number;
 }
 
+interface RulesSection {
+  title: string;
+  rows: string[][];
+}
+
 const view = ref<"matches" | "stats" | "data" | "meta">("matches");
 const matches = ref<MatchSummary[]>([]);
 const info = ref<AppInfo | null>(null);
@@ -194,13 +199,14 @@ async function openStats() {
   }
 }
 
-const dataTab = ref<"items" | "champions" | "traits" | "augments" | "odds">("items");
+const dataTab = ref<"items" | "champions" | "traits" | "augments" | "odds" | "rules">("items");
 const dataLoading = ref(false);
 const items = ref<ItemData[]>([]);
 const champions = ref<ChampionData[]>([]);
 const traits = ref<TraitData[]>([]);
 const augments = ref<ItemData[]>([]);
 const shopOdds = ref<ShopOddsLevel[]>([]);
+const gameRules = ref<RulesSection[]>([]);
 const search = ref("");
 
 const itemMap = computed(() => {
@@ -236,18 +242,20 @@ async function openData() {
   dataLoading.value = true;
   error.value = "";
   try {
-    const [i, c, t, a, o] = await Promise.all([
+    const [i, c, t, a, o, r] = await Promise.all([
       invoke<ItemData[]>("get_items"),
       invoke<ChampionData[]>("get_champions"),
       invoke<TraitData[]>("get_traits"),
       invoke<ItemData[]>("get_augments"),
       invoke<ShopOddsLevel[]>("get_shop_odds"),
+      invoke<RulesSection[]>("get_game_rules"),
     ]);
     items.value = i;
     champions.value = c;
     traits.value = t;
     augments.value = a;
     shopOdds.value = o;
+    gameRules.value = r;
   } catch (e) {
     error.value = String(e);
   } finally {
@@ -527,6 +535,7 @@ onMounted(async () => {
               { key: 'traits', label: '羁绊' },
               { key: 'augments', label: '海克斯' },
               { key: 'odds', label: '商店概率' },
+              { key: 'rules', label: '机制' },
             ]"
             :key="t.key"
             class="tab"
@@ -658,6 +667,23 @@ onMounted(async () => {
               </tr>
             </tbody>
           </table>
+        </template>
+
+        <!-- 机制 -->
+        <template v-else-if="dataTab === 'rules'">
+          <div class="odds-note">基础机制规则，具体数值可能随补丁微调，以游戏内为准。</div>
+          <div v-for="sec in gameRules" :key="sec.title" class="rule-section">
+            <h3>{{ sec.title }}</h3>
+            <table class="odds-table">
+              <tbody>
+                <tr v-for="(row, ri) in sec.rows" :key="ri">
+                  <td v-for="(cell, ci) in row" :key="ci" :class="{ 'rule-key': ci === 0 }">
+                    {{ cell }}
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
         </template>
       </template>
 
@@ -1806,6 +1832,27 @@ button.small {
 
 .odds-table tbody tr:hover {
   background: var(--card-hover);
+}
+
+.rule-section {
+  margin-bottom: 22px;
+}
+
+.rule-section h3 {
+  font-size: 13px;
+  color: var(--faint);
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  margin: 0 0 8px;
+  text-transform: none;
+}
+
+.odds-table td.rule-key {
+  color: var(--gold-bright);
+  font-weight: 600;
+  text-align: left;
+  width: 40%;
+  border-right: 1px solid var(--border);
 }
 
 .meta-key {

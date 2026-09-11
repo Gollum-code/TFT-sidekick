@@ -14,7 +14,7 @@ use tauri::{AppHandle, Emitter, Manager, State, WebviewUrl, WebviewWindowBuilder
 use crate::lcu::LcuClient;
 use crate::models::{
     AppInfo, ChampionData, EnrichedMatch, ItemData, MatchSummary, MetaComp, NamedCount,
-    ShopOddsLevel, Stats, SyncResult, TraitData,
+    RulesSection, ShopOddsLevel, Stats, SyncResult, TraitData,
 };
 use crate::riot::{crawl_matches, aggregate_comps, RiotClient};
 use crate::static_data::StaticData;
@@ -164,6 +164,41 @@ fn get_shop_odds() -> Vec<ShopOddsLevel> {
             odds: o.to_vec(),
         })
         .collect()
+}
+
+#[tauri::command]
+fn get_game_rules() -> Vec<RulesSection> {
+    vec![
+        RulesSection {
+            title: "利息机制".into(),
+            rows: vec![
+                vec!["规则".into(), "说明".into()],
+                vec!["利息".into(), "每存 10 金币，回合结束额外 +1 金币".into()],
+                vec!["利息上限".into(), "每回合最多 5 利息（存款 50 金币封顶）".into()],
+                vec!["连胜/连败奖励".into(), "2 连胜 +1，4 连胜及以上 +2（具体数值随赛季微调）".into()],
+            ],
+        },
+        RulesSection {
+            title: "玩家基础伤害（失败掉血）".into(),
+            rows: vec![
+                vec!["阶段".into(), "基础掉血".into()],
+                vec!["1-1 ~ 1-4".into(), "0（野怪回合不掉血）".into()],
+                vec!["2-1 ~ 2-7".into(), "2".into()],
+                vec!["3-1 ~ 3-7".into(), "3".into()],
+                vec!["4-1 ~ 4-7".into(), "4".into()],
+                vec!["5-1 及以上".into(), "5".into()],
+            ],
+        },
+        RulesSection {
+            title: "商店刷新规则".into(),
+            rows: vec![
+                vec!["规则".into(), "说明".into()],
+                vec!["刷新费用".into(), "每次刷新商店 2 金币".into()],
+                vec!["免费刷新".into(), "每次对战胜利后获得 1 次免费刷新（不可叠加）".into()],
+                vec!["野怪回合".into(), "野怪回合结束免费刷新一次".into()],
+            ],
+        },
+    ]
 }
 
 #[tauri::command]
@@ -433,6 +468,7 @@ pub fn run() {
             get_traits,
             get_augments,
             get_shop_odds,
+            get_game_rules,
             set_riot_key,
             fetch_meta
         ])

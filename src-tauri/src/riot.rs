@@ -248,7 +248,7 @@ pub fn aggregate_comps(matches: &[RiotMatch]) -> Vec<CompStat> {
                 top4: 0,
             });
             e.appearances += 1;
-            if p.win {
+            if p.placement == 1 {
                 e.wins += 1;
             }
             if p.placement <= 4 {
@@ -278,33 +278,14 @@ mod tests {
         let puuids = client.leaderboard("challenger").await.expect("leaderboard");
         println!("challenger players: {}", puuids.len());
 
-        let mut matches = Vec::new();
-        let mut seen = std::collections::HashSet::new();
-        for puuid in puuids.iter().take(15) {
-            let ids = client.match_ids(puuid, 10).await.expect("match ids");
-            for id in ids.into_iter().take(5) {
-                if !seen.insert(id.clone()) {
-                    continue;
-                }
-                match client.match_detail(&id).await {
-                    Ok(m) => matches.push(m),
-                    Err(e) => eprintln!("match {} err: {e}", id),
-                }
-                if matches.len() >= 30 {
-                    break;
-                }
-            }
-            if matches.len() >= 30 {
-                break;
-            }
-        }
+        let matches = crawl_matches(&client, 30).await.expect("crawl");
         println!("fetched matches: {}", matches.len());
 
         let stats = aggregate_comps(&matches);
         println!("comps: {}", stats.len());
         for s in stats.iter().take(10) {
             println!(
-                "  {} : {} 局, 吃鸡率 {:.1}%, 前四率 {:.1}%",
+                "  {} : {} appearances, win {:.1}%, top4 {:.1}%",
                 s.id,
                 s.appearances,
                 s.win_rate() * 100.0,

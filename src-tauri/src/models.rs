@@ -160,6 +160,12 @@ pub struct ShopOddsLevel {
     pub odds: Vec<f32>,
 }
 
+#[derive(Debug, Clone, Serialize)]
+pub struct RulesSection {
+    pub title: String,
+    pub rows: Vec<Vec<String>>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ParticipantComp {
     pub placement: i32,
