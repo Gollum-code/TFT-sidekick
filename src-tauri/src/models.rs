@@ -215,4 +215,6 @@ pub struct MetaItem {
 pub struct MetaResult {
     pub comps: Vec<MetaComp>,
     pub items: Vec<MetaItem>,
+    pub sample_count: u32,
+    pub added_count: u32,
 }

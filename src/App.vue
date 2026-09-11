@@ -153,6 +153,8 @@ interface MetaItem {
 interface MetaResult {
   comps: MetaComp[];
   items: MetaItem[];
+  sample_count: number;
+  added_count: number;
 }
 
 interface RulesSection {
@@ -304,6 +306,9 @@ async function fetchMeta() {
   error.value = "";
   try {
     metaData.value = await invoke<MetaResult>("fetch_meta");
+    if (metaData.value) {
+      lastSync.value = `样本 ${metaData.value.sample_count} 局，本次新增 ${metaData.value.added_count} 局`;
+    }
   } catch (e) {
     error.value = String(e);
   } finally {
@@ -311,10 +316,25 @@ async function fetchMeta() {
   }
 }
 
+async function getMeta() {
+  try {
+    const r = await invoke<MetaResult>("get_meta");
+    metaData.value = r;
+    if (r.sample_count > 0) {
+      lastSync.value = `样本缓存 ${r.sample_count} 局（点击「刷新数据」可增量更新）`;
+    } else {
+      lastSync.value = "";
+    }
+  } catch (e) {
+    error.value = String(e);
+  }
+}
+
 function setView(v: "matches" | "stats" | "data" | "meta") {
   view.value = v;
   if (v === "stats") openStats();
   if (v === "data") openData();
+  if (v === "meta") getMeta();
 }
 
 function pct(x: number) {
@@ -415,6 +435,11 @@ onMounted(async () => {
       summoner.value = null;
       lcuSource.value = "";
     }
+  });
+
+  // 后台增量爬取完成后自动刷新
+  await listen("meta-updated", () => {
+    if (view.value === "meta") getMeta();
   });
 });
 </script>

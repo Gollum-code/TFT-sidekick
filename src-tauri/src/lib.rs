@@ -14,9 +14,10 @@ use tauri::{AppHandle, Emitter, Manager, State, WebviewUrl, WebviewWindowBuilder
 use crate::lcu::LcuClient;
 use crate::models::{
     AppInfo, ChampionData, EnrichedMatch, ItemData, MatchSummary, MetaComp, MetaItem, MetaResult,
-    NamedCount, RulesSection, ShopOddsLevel, Stats, SyncResult, TraitData,
+    NamedCount, ParticipantComp, RiotMatch, RulesSection, ShopOddsLevel, Stats, SyncResult,
+    TraitData,
 };
-use crate::riot::{aggregate_comps, aggregate_items, crawl_matches, RiotClient};
+use crate::riot::{aggregate_comps, aggregate_items, RiotClient};
 use crate::static_data::StaticData;
 
 struct AppState {
@@ -217,21 +218,87 @@ fn set_riot_key(state: State<'_, AppState>, key: String) -> Result<(), String> {
     db.set_meta("riot_api_key", &key).map_err(|e| e.to_string())
 }
 
-#[tauri::command]
-async fn fetch_meta(state: State<'_, AppState>) -> Result<MetaResult, String> {
-    let key = {
-        let db = state.db.lock().map_err(|e| e.to_string())?;
-        db.get_meta("riot_api_key").map_err(|e| e.to_string())?
+/// 增量爬取：只抓库里还没有的对局，加入样本缓存。
+async fn incremental_crawl(
+    client: &RiotClient,
+    db: &Arc<Mutex<db::Database>>,
+    limit: usize,
+) -> Result<(usize, u32), String> {
+    let mut added = 0usize;
+    let mut seen = std::collections::HashSet::new();
+    'outer: for tier in ["challenger", "grandmaster", "master"] {
+        let puuids = client
+            .leaderboard(tier)
+            .await
+            .map_err(|e| e.to_string())?;
+        for puuid in puuids.iter().take(15) {
+            let ids = client
+                .match_ids(puuid, 8)
+                .await
+                .map_err(|e| e.to_string())?;
+            for id in ids.into_iter().take(4) {
+                if !seen.insert(id.clone()) {
+                    continue;
+                }
+                {
+                    let d = db.lock().map_err(|e| e.to_string())?;
+                    if d.match_exists(&id).map_err(|e| e.to_string())? {
+                        continue;
+                    }
+                }
+                if let Ok(m) = client.match_detail(&id).await {
+                    let comps_json =
+                        serde_json::to_string(&m.participants).map_err(|e| e.to_string())?;
+                    {
+                        let d = db.lock().map_err(|e| e.to_string())?;
+                        if d
+                            .insert_meta_match(&id, &comps_json)
+                            .map_err(|e| e.to_string())?
+                        {
+                            added += 1;
+                        }
+                    }
+                    if added >= limit {
+                        break 'outer;
+                    }
+                }
+            }
+        }
     }
-    .ok_or("请先在设置里填写 Riot API key")?;
+    let total = db
+        .lock()
+        .map_err(|e| e.to_string())?
+        .count_meta_matches()
+        .map_err(|e| e.to_string())?;
+    Ok((added, total))
+}
 
-    let client = RiotClient::new(key, "na1");
-    let matches = crawl_matches(&client, 30).await.map_err(|e| e.to_string())?;
-    let comps = aggregate_comps(&matches);
-    let items = aggregate_items(&matches);
-    let sd = ensure_static_data(&state).await?;
+/// 从本地样本缓存聚合出 阵容榜 + 装备榜。
+fn aggregate_stored_matches(
+    db: &db::Database,
+    sd: &Arc<StaticData>,
+) -> Result<(Vec<MetaComp>, Vec<MetaItem>, u32), String> {
+    let all = db.all_meta_matches().map_err(|e| e.to_string())?;
+    let total = all.len() as u32;
 
-    let mut comp_out: Vec<MetaComp> = comps
+    let matches: Vec<RiotMatch> = all
+        .into_iter()
+        .filter_map(|(mid, comps_json)| {
+            serde_json::from_str::<Vec<ParticipantComp>>(&comps_json)
+                .ok()
+                .map(|participants| RiotMatch {
+                    match_id: mid,
+                    queue_id: 0,
+                    tft_set_number: 0,
+                    participants,
+                })
+        })
+        .collect();
+
+    let comp_stats = aggregate_comps(&matches);
+    let item_stats = aggregate_items(&matches);
+
+    let mut comp_out: Vec<MetaComp> = comp_stats
         .into_iter()
         .filter(|s| s.appearances >= 2)
         .map(|s| {
@@ -255,8 +322,7 @@ async fn fetch_meta(state: State<'_, AppState>) -> Result<MetaResult, String> {
             .unwrap_or(std::cmp::Ordering::Equal)
     });
 
-    // 装备榜：过滤低样本，按前四率降序（强度榜）
-    let mut item_out: Vec<MetaItem> = items
+    let mut item_out: Vec<MetaItem> = item_stats
         .into_iter()
         .filter(|s| s.appearances >= 5)
         .map(|s| {
@@ -280,10 +346,64 @@ async fn fetch_meta(state: State<'_, AppState>) -> Result<MetaResult, String> {
             .unwrap_or(std::cmp::Ordering::Equal)
     });
 
+    Ok((comp_out, item_out, total))
+}
+
+/// 读取缓存的 Meta 结果（不抓取，秒出）。
+#[tauri::command]
+async fn get_meta(state: State<'_, AppState>) -> Result<MetaResult, String> {
+    let sd = ensure_static_data(&state).await?;
+    let (comps, items, total) = {
+        let db = state.db.lock().map_err(|e| e.to_string())?;
+        aggregate_stored_matches(&db, &sd)?
+    };
     Ok(MetaResult {
-        comps: comp_out,
-        items: item_out,
+        comps,
+        items,
+        sample_count: total,
+        added_count: 0,
     })
+}
+
+/// 增量抓取新对局 + 返回最新 Meta 结果。
+#[tauri::command]
+async fn fetch_meta(state: State<'_, AppState>) -> Result<MetaResult, String> {
+    let key = {
+        let db = state.db.lock().map_err(|e| e.to_string())?;
+        db.get_meta("riot_api_key").map_err(|e| e.to_string())?
+    }
+    .ok_or("请先在设置里填写 Riot API key")?;
+
+    let client = RiotClient::new(key, "na1");
+    let (added, total) = incremental_crawl(&client, &state.db, 30).await?;
+    let sd = ensure_static_data(&state).await?;
+    let (comps, items, _) = {
+        let db = state.db.lock().map_err(|e| e.to_string())?;
+        aggregate_stored_matches(&db, &sd)?
+    };
+
+    Ok(MetaResult {
+        comps,
+        items,
+        sample_count: total,
+        added_count: added as u32,
+    })
+}
+
+/// 后台定时增量爬取，保持 Meta 数据新鲜。
+async fn meta_crawl_loop(app: AppHandle, db: Arc<Mutex<db::Database>>) {
+    loop {
+        tokio::time::sleep(std::time::Duration::from_secs(900)).await;
+        let key = {
+            let d = db.lock().unwrap();
+            d.get_meta("riot_api_key").unwrap_or(None)
+        };
+        let Some(key) = key else { continue };
+        let client = RiotClient::new(key, "na1");
+        if incremental_crawl(&client, &db, 20).await.is_ok() {
+            let _ = app.emit("meta-updated", ());
+        }
+    }
 }
 
 async fn do_sync(
@@ -480,9 +600,15 @@ pub fn run() {
 
             setup_tray(app.handle())?;
 
+            let meta_db = db.clone();
             let handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
                 gameflow_loop(handle, lcu, db).await;
+            });
+
+            let handle2 = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                meta_crawl_loop(handle2, meta_db).await;
             });
 
             Ok(())
@@ -510,7 +636,8 @@ pub fn run() {
             get_shop_odds,
             get_game_rules,
             set_riot_key,
-            fetch_meta
+            fetch_meta,
+            get_meta
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -521,9 +648,52 @@ mod integration_tests {
     use super::*;
 
     #[tokio::test]
+    #[ignore = "需要 Riot API key，会消耗请求配额"]
+    async fn incremental_meta_cache_live() {
+        let key = std::env::var("RIOT_API_KEY").expect("RIOT_API_KEY");
+        let db_path = std::env::temp_dir().join("meta_cache_test.db");
+        let _ = std::fs::remove_file(&db_path);
+        let db = Arc::new(Mutex::new(db::Database::open(&db_path).unwrap()));
+
+        let client = RiotClient::new(key, "na1");
+        let (added1, total1) = incremental_crawl(&client, &db, 8).await.unwrap();
+        println!("first crawl: added={added1} total={total1}");
+        assert!(added1 > 0);
+
+        // 二次爬取：已存的 match_id 不会重复入库（主键 + INSERT OR IGNORE），
+        // 只会补抓上次没达到的剩余候选，故 total 单调增长、不重复。
+        let (added2, total2) = incremental_crawl(&client, &db, 8).await.unwrap();
+        println!("second crawl: added={added2} total={total2}");
+        assert_eq!(total2, total1 + added2 as u32, "total 应为已存 + 本次新增");
+
+        // 验证无重复 match_id
+        {
+            let d = db.lock().unwrap();
+            let all = d.all_meta_matches().unwrap();
+            let unique: std::collections::HashSet<_> = all.iter().map(|(m, _)| m.clone()).collect();
+            assert_eq!(unique.len(), all.len(), "不应有重复 match_id");
+        }
+
+        let d = db.lock().unwrap();
+        let sd = Arc::new(
+            StaticData::load(&std::env::temp_dir().join("cdragon_tft_zhcn.json")).unwrap(),
+        );
+        let (comps, items, n) = aggregate_stored_matches(&d, &sd).unwrap();
+        println!(
+            "aggregated: {n} matches, {} comps, {} items",
+            comps.len(),
+            items.len()
+        );
+        assert!(!comps.is_empty());
+        assert!(!items.is_empty());
+
+        let _ = std::fs::remove_file(&db_path);
+    }
+
+    #[tokio::test]
     #[ignore = "需要登录并运行英雄联盟客户端"]
     async fn full_pipeline_live() {
-        let mut client = LcuClient::new();
+                let mut client = LcuClient::new();
         client.discover_and_connect().expect("discover failed");
         let me = client.current_summoner().await.expect("summoner failed");
         let matches = client.tft_matches(&me.puuid).await.expect("matches failed");
