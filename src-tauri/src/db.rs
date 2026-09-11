@@ -62,13 +62,6 @@ CREATE TABLE IF NOT EXISTS match_traits (
     tier_total   INTEGER
 );
 CREATE INDEX IF NOT EXISTS idx_match_traits_game ON match_traits(game_id);
-
--- 高分段 Meta 样本缓存（对局去重积累）
-CREATE TABLE IF NOT EXISTS meta_matches (
-    match_id   TEXT PRIMARY KEY,
-    comps      TEXT NOT NULL,
-    created_at TEXT NOT NULL
-);
 "#;
 
 impl Database {
@@ -87,54 +80,6 @@ impl Database {
 
     pub fn path(&self) -> &std::path::Path {
         &self.path
-    }
-
-    pub fn get_meta(&self, key: &str) -> Result<Option<String>, DbError> {
-        let mut stmt = self.conn.prepare("SELECT value FROM meta WHERE key = ?1")?;
-        let mut rows = stmt.query([key])?;
-        if let Some(row) = rows.next()? {
-            Ok(Some(row.get(0)?))
-        } else {
-            Ok(None)
-        }
-    }
-
-    pub fn set_meta(&self, key: &str, value: &str) -> Result<(), DbError> {
-        self.conn.execute(
-            "INSERT INTO meta (key, value) VALUES (?1, ?2)
-             ON CONFLICT(key) DO UPDATE SET value = ?2",
-            [key, value],
-        )?;
-        Ok(())
-    }
-
-    pub fn match_exists(&self, match_id: &str) -> Result<bool, DbError> {
-        let mut stmt = self.conn.prepare("SELECT 1 FROM meta_matches WHERE match_id = ?1")?;
-        let mut rows = stmt.query([match_id])?;
-        Ok(rows.next()?.is_some())
-    }
-
-    pub fn insert_meta_match(&self, match_id: &str, comps: &str) -> Result<bool, DbError> {
-        let n = self.conn.execute(
-            "INSERT OR IGNORE INTO meta_matches (match_id, comps, created_at) VALUES (?1, ?2, ?3)",
-            params![match_id, comps, chrono::Utc::now().to_rfc3339()],
-        )?;
-        Ok(n > 0)
-    }
-
-    pub fn all_meta_matches(&self) -> Result<Vec<(String, String)>, DbError> {
-        let mut stmt = self
-            .conn
-            .prepare("SELECT match_id, comps FROM meta_matches")?;
-        let rows = stmt.query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?;
-        rows.collect::<Result<Vec<_>, _>>().map_err(DbError::from)
-    }
-
-    pub fn count_meta_matches(&self) -> Result<u32, DbError> {
-        let n: i64 = self
-            .conn
-            .query_row("SELECT COUNT(*) FROM meta_matches", [], |r| r.get(0))?;
-        Ok(n as u32)
     }
 
     pub fn list_matches(&self, limit: u32) -> Result<Vec<MatchSummary>, DbError> {

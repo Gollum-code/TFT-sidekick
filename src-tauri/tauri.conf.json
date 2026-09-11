@@ -13,10 +13,12 @@
     "windows": [
       {
         "title": "TFT Sidekick",
-        "width": 1100,
-        "height": 720,
-        "minWidth": 800,
-        "minHeight": 560
+        "width": 1180,
+        "height": 760,
+        "minWidth": 860,
+        "minHeight": 600,
+        "decorations": false,
+        "resizable": true
       }
     ],
     "security": {

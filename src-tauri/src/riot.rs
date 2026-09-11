@@ -284,6 +284,52 @@ pub fn aggregate_items(matches: &[RiotMatch]) -> Vec<ItemStat> {
     out
 }
 
+/// (英雄, 装备) 组合聚合。
+#[derive(Debug, Clone)]
+pub struct HeroItemStat {
+    pub hero: String,
+    pub item: String,
+    pub appearances: u32,
+    pub wins: u32,
+    pub top4: u32,
+}
+
+/// 按 (英雄, 装备) 聚合：某英雄身上某装备的出现/吃鸡/前四。
+pub fn aggregate_unit_items(matches: &[RiotMatch]) -> Vec<HeroItemStat> {
+    let mut map: std::collections::HashMap<(String, String), HeroItemStat> =
+        std::collections::HashMap::new();
+    for m in matches {
+        for p in &m.participants {
+            for u in &p.units {
+                for item in &u.items {
+                    let key = (u.character_id.clone(), item.clone());
+                    let e = map.entry(key).or_insert(HeroItemStat {
+                        hero: u.character_id.clone(),
+                        item: item.clone(),
+                        appearances: 0,
+                        wins: 0,
+                        top4: 0,
+                    });
+                    e.appearances += 1;
+                    if p.placement == 1 {
+                        e.wins += 1;
+                    }
+                    if p.placement <= 4 {
+                        e.top4 += 1;
+                    }
+                }
+            }
+        }
+    }
+    let mut out: Vec<HeroItemStat> = map.into_values().collect();
+    out.sort_by(|a, b| {
+        b.appearances
+            .cmp(&a.appearances)
+            .then_with(|| b.top4.cmp(&a.top4))
+    });
+    out
+}
+
 /// 按「主羁绊」聚合胜率/前四率（按出现次数降序，仅保留样本足够的）。
 pub fn aggregate_comps(matches: &[RiotMatch]) -> Vec<CompStat> {
     let mut map: HashMap<String, CompStat> = HashMap::new();

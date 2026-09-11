@@ -150,9 +150,26 @@ interface MetaItem {
   top4_rate: number;
 }
 
+interface HeroItem {
+  id: string;
+  name: string;
+  icon_url: string;
+  appearances: number;
+  win_rate: number;
+  top4_rate: number;
+}
+
+interface HeroItemRow {
+  id: string;
+  name: string;
+  icon_url: string;
+  items: HeroItem[];
+}
+
 interface MetaResult {
   comps: MetaComp[];
   items: MetaItem[];
+  hero_items: HeroItemRow[];
   sample_count: number;
   added_count: number;
 }
@@ -207,6 +224,23 @@ async function toggleOverlay() {
   } catch (e) {
     error.value = String(e);
   }
+}
+
+async function minWin() {
+  await getCurrentWindow().minimize();
+}
+
+async function maxWin() {
+  const w = getCurrentWindow();
+  if (await w.isMaximized()) {
+    await w.unmaximize();
+  } else {
+    await w.maximize();
+  }
+}
+
+async function hideWin() {
+  await getCurrentWindow().hide();
 }
 
 async function openStats() {
@@ -287,46 +321,21 @@ async function openData() {
 }
 
 const metaData = ref<MetaResult | null>(null);
-const metaTab = ref<"comps" | "items">("comps");
+const metaTab = ref<"comps" | "items" | "heroes">("comps");
 const metaLoading = ref(false);
-const riotKey = ref("");
 
-async function saveRiotKey() {
-  error.value = "";
-  try {
-    await invoke("set_riot_key", { key: riotKey.value.trim() });
-    showToast("API key 已保存");
-  } catch (e) {
-    error.value = String(e);
-  }
-}
-
-async function fetchMeta() {
+async function getMeta() {
   metaLoading.value = true;
   error.value = "";
   try {
-    metaData.value = await invoke<MetaResult>("fetch_meta");
-    if (metaData.value) {
-      lastSync.value = `样本 ${metaData.value.sample_count} 局，本次新增 ${metaData.value.added_count} 局`;
-    }
-  } catch (e) {
-    error.value = String(e);
-  } finally {
-    metaLoading.value = false;
-  }
-}
-
-async function getMeta() {
-  try {
     const r = await invoke<MetaResult>("get_meta");
     metaData.value = r;
-    if (r.sample_count > 0) {
-      lastSync.value = `样本缓存 ${r.sample_count} 局（点击「刷新数据」可增量更新）`;
-    } else {
-      lastSync.value = "";
-    }
+    lastSync.value = r.sample_count > 0 ? `样本 ${r.sample_count} 局` : "";
   } catch (e) {
     error.value = String(e);
+    metaData.value = null;
+  } finally {
+    metaLoading.value = false;
   }
 }
 
@@ -437,11 +446,7 @@ onMounted(async () => {
     }
   });
 
-  // 后台增量爬取完成后自动刷新
-  await listen("meta-updated", () => {
-    if (view.value === "meta") getMeta();
   });
-});
 </script>
 
 <template>
@@ -466,7 +471,20 @@ onMounted(async () => {
     <div class="overlay-footer">对局结束后自动记录</div>
   </div>
 
-  <div v-else class="shell">
+  <div v-else class="window">
+    <div class="titlebar" data-tauri-drag-region>
+      <div class="titlebar-left">
+        <span class="titlebar-logo">◈</span>
+        <span class="titlebar-title">TFT Sidekick</span>
+      </div>
+      <div class="titlebar-controls" data-tauri-drag-region="false">
+        <button class="titlebar-btn" title="最小化" @click="minWin">─</button>
+        <button class="titlebar-btn" title="最大化" @click="maxWin">□</button>
+        <button class="titlebar-btn close" title="关闭" @click="hideWin">✕</button>
+      </div>
+    </div>
+
+    <div class="shell">
     <aside class="sidebar">
       <div class="brand">
         <div class="brand-logo">◈</div>
@@ -476,10 +494,10 @@ onMounted(async () => {
         </div>
       </div>
       <nav>
-        <a class="nav-item" :class="{ active: view === 'matches' }" @click="setView('matches')">战绩</a>
-        <a class="nav-item" :class="{ active: view === 'stats' }" @click="setView('stats')">统计</a>
-        <a class="nav-item" :class="{ active: view === 'data' }" @click="setView('data')">数据表</a>
-        <a class="nav-item" :class="{ active: view === 'meta' }" @click="setView('meta')">Meta</a>
+        <a class="nav-item" :class="{ active: view === 'matches' }" @click="setView('matches')"><span class="nav-ico">◉</span>战绩</a>
+        <a class="nav-item" :class="{ active: view === 'stats' }" @click="setView('stats')"><span class="nav-ico">▤</span>统计</a>
+        <a class="nav-item" :class="{ active: view === 'data' }" @click="setView('data')"><span class="nav-ico">▦</span>数据表</a>
+        <a class="nav-item" :class="{ active: view === 'meta' }" @click="setView('meta')"><span class="nav-ico">★</span>Meta</a>
       </nav>
       <div class="sidebar-footer">
         <div class="lcu-status" :class="summoner ? 'ok' : 'off'">
@@ -743,18 +761,12 @@ onMounted(async () => {
       <template v-else-if="view === 'meta'">
         <header class="topbar">
           <h2>高分段 Meta</h2>
-          <button @click="fetchMeta" :disabled="metaLoading">
-            {{ metaLoading ? "抓取中…" : "刷新数据" }}
+          <button @click="getMeta" :disabled="metaLoading">
+            {{ metaLoading ? "加载中…" : "刷新" }}
           </button>
         </header>
-
-        <div class="meta-key">
-          <input v-model="riotKey" placeholder="Riot API key (RGAPI-…)" class="search" />
-          <button class="ghost small" @click="saveRiotKey">保存 key</button>
-        </div>
-        <div class="odds-note">
-          数据来自国际服王者/宗师/大师段位，跨服通用；抓取约需 30~60 秒，请耐心等待。
-        </div>
+        <div class="odds-note">数据来源：国际服王者/宗师/大师段位（跨服通用）。</div>
+        <p v-if="lastSync" class="hint" style="margin: 0 0 8px">{{ lastSync }}</p>
 
         <p v-if="error" class="error">{{ error }}</p>
 
@@ -764,6 +776,7 @@ onMounted(async () => {
               v-for="t in [
                 { key: 'comps', label: '阵容榜' },
                 { key: 'items', label: '装备榜' },
+                { key: 'heroes', label: '英雄装备' },
               ]"
               :key="t.key"
               class="tab"
@@ -813,6 +826,22 @@ onMounted(async () => {
               <span class="meta-num">{{ it.appearances }}</span>
               <span class="meta-num accent">{{ (it.win_rate * 100).toFixed(1) }}%</span>
               <span class="meta-num accent green">{{ (it.top4_rate * 100).toFixed(1) }}%</span>
+            </div>
+          </div>
+
+          <!-- 英雄装备 -->
+          <div v-if="metaTab === 'heroes' && metaData.hero_items.length > 0" class="hero-item-list">
+            <div v-for="h in metaData.hero_items" :key="h.id" class="hero-item-card">
+              <div class="champ-head">
+                <img v-if="h.icon_url" :src="h.icon_url" :alt="h.name" class="champ-icon" />
+                <span class="champ-name">{{ h.name || h.id }}</span>
+              </div>
+              <div class="hero-item-row" v-for="it in h.items" :key="it.id">
+                <img v-if="it.icon_url" :src="it.icon_url" :alt="it.name" class="top-icon" />
+                <span class="top-name">{{ it.name || it.id }}</span>
+                <span class="meta-num">{{ it.appearances }}</span>
+                <span class="meta-num accent green">{{ (it.top4_rate * 100).toFixed(1) }}%</span>
+              </div>
             </div>
           </div>
         </template>
@@ -914,6 +943,7 @@ onMounted(async () => {
         </template>
       </template>
     </main>
+    </div>
   </div>
 </template>
 
@@ -976,9 +1006,78 @@ body {
   background-clip: content-box;
 }
 
+.window {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+}
+
+.titlebar {
+  height: 38px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 8px 0 14px;
+  background: #12121a;
+  border-bottom: 1px solid var(--border);
+  -webkit-app-region: drag;
+  user-select: none;
+}
+
+.titlebar-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.titlebar-logo {
+  color: var(--gold);
+  font-size: 14px;
+}
+
+.titlebar-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--dim);
+  letter-spacing: 0.3px;
+}
+
+.titlebar-controls {
+  display: flex;
+  gap: 2px;
+  -webkit-app-region: no-drag;
+}
+
+.titlebar-btn {
+  width: 36px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  color: var(--dim);
+  font-size: 13px;
+  cursor: pointer;
+  padding: 0;
+}
+
+.titlebar-btn:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text);
+}
+
+.titlebar-btn.close:hover {
+  background: #c0392b;
+  color: #fff;
+}
+
 .shell {
   display: flex;
-  height: 100vh;
+  flex: 1;
+  min-height: 0;
 }
 
 .sidebar {
@@ -1044,6 +1143,19 @@ nav {
   cursor: pointer;
   font-size: 14px;
   transition: background 0.15s, color 0.15s;
+}
+
+.nav-ico {
+  display: inline-block;
+  width: 20px;
+  margin-right: 8px;
+  color: var(--faint);
+  font-size: 13px;
+  text-align: center;
+}
+
+.nav-item.active .nav-ico {
+  color: var(--gold);
 }
 
 .nav-item:hover {
@@ -2029,5 +2141,35 @@ button.small {
 
 .meta-num.accent.green {
   color: var(--green);
+}
+
+.hero-item-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 11px;
+  margin-top: 8px;
+}
+
+.hero-item-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 13px;
+}
+
+.hero-item-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.hero-item-row:last-child {
+  border-bottom: none;
+}
+
+.hero-item-row .meta-num {
+  min-width: 40px;
 }
 </style>

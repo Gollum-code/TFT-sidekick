@@ -191,7 +191,7 @@ pub struct RiotMatch {
     pub participants: Vec<ParticipantComp>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MetaComp {
     pub id: String,
     pub name: String,
@@ -201,7 +201,7 @@ pub struct MetaComp {
     pub top4_rate: f64,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MetaItem {
     pub id: String,
     pub name: String,
@@ -211,10 +211,29 @@ pub struct MetaItem {
     pub top4_rate: f64,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HeroItem {
+    pub id: String,
+    pub name: String,
+    pub icon_url: String,
+    pub appearances: u32,
+    pub win_rate: f64,
+    pub top4_rate: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HeroItemRow {
+    pub id: String,
+    pub name: String,
+    pub icon_url: String,
+    pub items: Vec<HeroItem>,
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct MetaResult {
     pub comps: Vec<MetaComp>,
     pub items: Vec<MetaItem>,
+    pub hero_items: Vec<HeroItemRow>,
     pub sample_count: u32,
     pub added_count: u32,
 }
