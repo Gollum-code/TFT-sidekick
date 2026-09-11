@@ -13,10 +13,10 @@ use tauri::{AppHandle, Emitter, Manager, State, WebviewUrl, WebviewWindowBuilder
 
 use crate::lcu::LcuClient;
 use crate::models::{
-    AppInfo, ChampionData, EnrichedMatch, ItemData, MatchSummary, MetaComp, NamedCount,
-    RulesSection, ShopOddsLevel, Stats, SyncResult, TraitData,
+    AppInfo, ChampionData, EnrichedMatch, ItemData, MatchSummary, MetaComp, MetaItem, MetaResult,
+    NamedCount, RulesSection, ShopOddsLevel, Stats, SyncResult, TraitData,
 };
-use crate::riot::{crawl_matches, aggregate_comps, RiotClient};
+use crate::riot::{aggregate_comps, aggregate_items, crawl_matches, RiotClient};
 use crate::static_data::StaticData;
 
 struct AppState {
@@ -218,7 +218,7 @@ fn set_riot_key(state: State<'_, AppState>, key: String) -> Result<(), String> {
 }
 
 #[tauri::command]
-async fn fetch_meta(state: State<'_, AppState>) -> Result<Vec<MetaComp>, String> {
+async fn fetch_meta(state: State<'_, AppState>) -> Result<MetaResult, String> {
     let key = {
         let db = state.db.lock().map_err(|e| e.to_string())?;
         db.get_meta("riot_api_key").map_err(|e| e.to_string())?
@@ -227,10 +227,11 @@ async fn fetch_meta(state: State<'_, AppState>) -> Result<Vec<MetaComp>, String>
 
     let client = RiotClient::new(key, "na1");
     let matches = crawl_matches(&client, 30).await.map_err(|e| e.to_string())?;
-    let stats = aggregate_comps(&matches);
+    let comps = aggregate_comps(&matches);
+    let items = aggregate_items(&matches);
     let sd = ensure_static_data(&state).await?;
 
-    let mut out: Vec<MetaComp> = stats
+    let mut comp_out: Vec<MetaComp> = comps
         .into_iter()
         .filter(|s| s.appearances >= 2)
         .map(|s| {
@@ -248,12 +249,41 @@ async fn fetch_meta(state: State<'_, AppState>) -> Result<Vec<MetaComp>, String>
             }
         })
         .collect();
-    out.sort_by(|a, b| {
+    comp_out.sort_by(|a, b| {
         b.top4_rate
             .partial_cmp(&a.top4_rate)
             .unwrap_or(std::cmp::Ordering::Equal)
     });
-    Ok(out)
+
+    // 装备榜：过滤低样本，按前四率降序（强度榜）
+    let mut item_out: Vec<MetaItem> = items
+        .into_iter()
+        .filter(|s| s.appearances >= 5)
+        .map(|s| {
+            let id = s.id.clone();
+            MetaItem {
+                name: sd
+                    .item_name(&id)
+                    .map(String::from)
+                    .unwrap_or_else(|| id.clone()),
+                icon_url: sd.item_icon(&id).unwrap_or_default(),
+                id,
+                appearances: s.appearances,
+                win_rate: s.win_rate(),
+                top4_rate: s.top4_rate(),
+            }
+        })
+        .collect();
+    item_out.sort_by(|a, b| {
+        b.top4_rate
+            .partial_cmp(&a.top4_rate)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+
+    Ok(MetaResult {
+        comps: comp_out,
+        items: item_out,
+    })
 }
 
 async fn do_sync(

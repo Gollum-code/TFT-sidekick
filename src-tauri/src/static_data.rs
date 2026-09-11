@@ -395,6 +395,17 @@ impl StaticData {
             .map(Self::icon_url)
     }
 
+    pub fn item_name(&self, id: &str) -> Option<&str> {
+        self.items.get(id).map(|i| i.name.as_str())
+    }
+
+    pub fn item_icon(&self, id: &str) -> Option<String> {
+        self.items
+            .get(id)
+            .and_then(|i| i.icon.as_deref())
+            .map(Self::icon_url)
+    }
+
     pub fn trait_name(&self, id: &str) -> Option<&str> {
         self.traits.get(id).map(|t| t.name.as_str())
     }

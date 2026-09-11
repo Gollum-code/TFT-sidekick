@@ -141,6 +141,20 @@ interface MetaComp {
   top4_rate: number;
 }
 
+interface MetaItem {
+  id: string;
+  name: string;
+  icon_url: string;
+  appearances: number;
+  win_rate: number;
+  top4_rate: number;
+}
+
+interface MetaResult {
+  comps: MetaComp[];
+  items: MetaItem[];
+}
+
 interface RulesSection {
   title: string;
   rows: string[][];
@@ -270,7 +284,8 @@ async function openData() {
   }
 }
 
-const metaComps = ref<MetaComp[]>([]);
+const metaData = ref<MetaResult | null>(null);
+const metaTab = ref<"comps" | "items">("comps");
 const metaLoading = ref(false);
 const riotKey = ref("");
 
@@ -288,7 +303,7 @@ async function fetchMeta() {
   metaLoading.value = true;
   error.value = "";
   try {
-    metaComps.value = await invoke<MetaComp[]>("fetch_meta");
+    metaData.value = await invoke<MetaResult>("fetch_meta");
   } catch (e) {
     error.value = String(e);
   } finally {
@@ -718,25 +733,64 @@ onMounted(async () => {
 
         <p v-if="error" class="error">{{ error }}</p>
 
-        <div v-if="metaComps.length > 0" class="meta-list">
-          <div class="meta-row meta-head">
-            <span class="meta-rank">#</span>
-            <span class="meta-name">阵容（主羁绊）</span>
-            <span class="meta-num">场次</span>
-            <span class="meta-num">吃鸡率</span>
-            <span class="meta-num">前四率</span>
+        <template v-if="metaData">
+          <div class="tabs">
+            <button
+              v-for="t in [
+                { key: 'comps', label: '阵容榜' },
+                { key: 'items', label: '装备榜' },
+              ]"
+              :key="t.key"
+              class="tab"
+              :class="{ active: metaTab === t.key }"
+              @click="metaTab = t.key as any"
+            >
+              {{ t.label }}
+            </button>
           </div>
-          <div v-for="(c, i) in metaComps" :key="c.id" class="meta-row">
-            <span class="meta-rank" :class="{ top3: i < 3 }">{{ i + 1 }}</span>
-            <span class="meta-name">
-              <img v-if="c.icon_url" :src="c.icon_url" :alt="c.name" class="top-icon" />
-              {{ c.name }}
-            </span>
-            <span class="meta-num">{{ c.appearances }}</span>
-            <span class="meta-num accent">{{ (c.win_rate * 100).toFixed(1) }}%</span>
-            <span class="meta-num accent green">{{ (c.top4_rate * 100).toFixed(1) }}%</span>
+
+          <!-- 阵容榜 -->
+          <div v-if="metaTab === 'comps' && metaData.comps.length > 0" class="meta-list">
+            <div class="meta-row meta-head">
+              <span class="meta-rank">#</span>
+              <span class="meta-name">阵容（主羁绊）</span>
+              <span class="meta-num">场次</span>
+              <span class="meta-num">吃鸡率</span>
+              <span class="meta-num">前四率</span>
+            </div>
+            <div v-for="(c, i) in metaData.comps" :key="c.id" class="meta-row">
+              <span class="meta-rank" :class="{ top3: i < 3 }">{{ i + 1 }}</span>
+              <span class="meta-name">
+                <img v-if="c.icon_url" :src="c.icon_url" :alt="c.name" class="top-icon" />
+                {{ c.name }}
+              </span>
+              <span class="meta-num">{{ c.appearances }}</span>
+              <span class="meta-num accent">{{ (c.win_rate * 100).toFixed(1) }}%</span>
+              <span class="meta-num accent green">{{ (c.top4_rate * 100).toFixed(1) }}%</span>
+            </div>
           </div>
-        </div>
+
+          <!-- 装备榜 -->
+          <div v-if="metaTab === 'items' && metaData.items.length > 0" class="meta-list">
+            <div class="meta-row meta-head">
+              <span class="meta-rank">#</span>
+              <span class="meta-name">装备</span>
+              <span class="meta-num">出现</span>
+              <span class="meta-num">吃鸡率</span>
+              <span class="meta-num">前四率</span>
+            </div>
+            <div v-for="(it, i) in metaData.items" :key="it.id" class="meta-row">
+              <span class="meta-rank" :class="{ top3: i < 3 }">{{ i + 1 }}</span>
+              <span class="meta-name">
+                <img v-if="it.icon_url" :src="it.icon_url" :alt="it.name" class="top-icon" />
+                {{ it.name }}
+              </span>
+              <span class="meta-num">{{ it.appearances }}</span>
+              <span class="meta-num accent">{{ (it.win_rate * 100).toFixed(1) }}%</span>
+              <span class="meta-num accent green">{{ (it.top4_rate * 100).toFixed(1) }}%</span>
+            </div>
+          </div>
+        </template>
         <p v-else-if="!metaLoading" class="empty">
           填写 Riot API key 后点「刷新数据」获取高分段 Meta 榜。
         </p>

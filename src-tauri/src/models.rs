@@ -200,3 +200,19 @@ pub struct MetaComp {
     pub win_rate: f64,
     pub top4_rate: f64,
 }
+
+#[derive(Debug, Clone, Serialize)]
+pub struct MetaItem {
+    pub id: String,
+    pub name: String,
+    pub icon_url: String,
+    pub appearances: u32,
+    pub win_rate: f64,
+    pub top4_rate: f64,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct MetaResult {
+    pub comps: Vec<MetaComp>,
+    pub items: Vec<MetaItem>,
+}

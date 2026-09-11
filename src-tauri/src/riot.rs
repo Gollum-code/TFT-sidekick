@@ -229,6 +229,61 @@ pub async fn crawl_matches(
     Ok(matches)
 }
 
+/// 装备聚合结果。
+#[derive(Debug, Clone)]
+pub struct ItemStat {
+    pub id: String,
+    pub appearances: u32,
+    pub wins: u32,
+    pub top4: u32,
+}
+
+impl ItemStat {
+    pub fn win_rate(&self) -> f64 {
+        if self.appearances == 0 {
+            0.0
+        } else {
+            self.wins as f64 / self.appearances as f64
+        }
+    }
+    pub fn top4_rate(&self) -> f64 {
+        if self.appearances == 0 {
+            0.0
+        } else {
+            self.top4 as f64 / self.appearances as f64
+        }
+    }
+}
+
+/// 按「装备在玩家棋盘上的出现」聚合：出现次数、吃鸡数、前四数。
+pub fn aggregate_items(matches: &[RiotMatch]) -> Vec<ItemStat> {
+    let mut map: HashMap<String, ItemStat> = HashMap::new();
+    for m in matches {
+        for p in &m.participants {
+            for u in &p.units {
+                for item in &u.items {
+                    let e = map.entry(item.clone()).or_insert(ItemStat {
+                        id: item.clone(),
+                        appearances: 0,
+                        wins: 0,
+                        top4: 0,
+                    });
+                    e.appearances += 1;
+                    if p.placement == 1 {
+                        e.wins += 1;
+                    }
+                    if p.placement <= 4 {
+                        e.top4 += 1;
+                    }
+                }
+            }
+        }
+    }
+    let mut out: Vec<ItemStat> = map.into_values().collect();
+    out.sort_by(|a, b| b.appearances.cmp(&a.appearances));
+    out
+}
+
 /// 按「主羁绊」聚合胜率/前四率（按出现次数降序，仅保留样本足够的）。
 pub fn aggregate_comps(matches: &[RiotMatch]) -> Vec<CompStat> {
     let mut map: HashMap<String, CompStat> = HashMap::new();
@@ -293,5 +348,17 @@ mod tests {
             );
         }
         assert!(!stats.is_empty());
+
+        let items = aggregate_items(&matches);
+        println!("items: {}", items.len());
+        for it in items.iter().take(10) {
+            println!(
+                "  item {} : {} appearances, top4 {:.1}%",
+                it.id,
+                it.appearances,
+                it.top4_rate() * 100.0
+            );
+        }
+        assert!(!items.is_empty());
     }
 }
