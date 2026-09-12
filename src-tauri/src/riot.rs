@@ -152,6 +152,9 @@ pub fn parse_match(raw: &serde_json::Value) -> RiotMatch {
         .and_then(|i| i.get("tft_set_number"))
         .and_then(|v| v.as_i64())
         .unwrap_or(0) as i32;
+    let game_creation = info
+        .and_then(|i| i.get("gameCreation").or_else(|| i.get("game_creation")))
+        .and_then(|v| v.as_i64());
 
     let participants = info
         .and_then(|i| i.get("participants"))
@@ -173,6 +176,7 @@ pub fn parse_match(raw: &serde_json::Value) -> RiotMatch {
         match_id,
         queue_id,
         tft_set_number,
+        game_creation,
         participants,
     }
 }
@@ -478,6 +482,143 @@ pub fn aggregate_comp_details(
         })
         .collect();
     out.sort_by(|a, b| b.appearances.cmp(&a.appearances));
+    out
+}
+
+/// 主羁绊识别：激活羁绊中层级最高者。
+fn primary_trait_of(p: &ParticipantComp) -> Option<String> {
+    p.traits
+        .iter()
+        .filter(|t| t.tier_current.unwrap_or(0) > 0)
+        .max_by_key(|t| t.tier_total.unwrap_or(0))
+        .map(|t| t.trait_id.clone())
+}
+
+/// 按日期聚合各阵容的占比（用于每日统计 / 阵容趋势）。
+pub fn aggregate_daily(matches: &[RiotMatch]) -> Vec<crate::models::DailyRow> {
+    use std::collections::HashMap;
+    let mut by_day: HashMap<String, Vec<&RiotMatch>> = HashMap::new();
+    for m in matches {
+        let day = m
+            .game_creation
+            .and_then(|ms| chrono::DateTime::from_timestamp_millis(ms))
+            .map(|t| t.format("%Y-%m-%d").to_string())
+            .unwrap_or_else(|| "未知".to_string());
+        by_day.entry(day).or_default().push(m);
+    }
+
+    let mut out = Vec::new();
+    let mut days: Vec<_> = by_day.into_iter().collect();
+    days.sort_by(|a, b| a.0.cmp(&b.0));
+    for (date, day_matches) in days {
+        // 聚合成当日的 CompStat 列表
+        let mut map: HashMap<String, CompStat> = HashMap::new();
+        for m in &day_matches {
+            for p in &m.participants {
+                let Some(pkey) = primary_trait_of(p) else { continue };
+                let e = map.entry(pkey.clone()).or_insert(CompStat {
+                    id: pkey,
+                    appearances: 0,
+                    wins: 0,
+                    top4: 0,
+                });
+                e.appearances += 1;
+                if p.placement == 1 {
+                    e.wins += 1;
+                }
+                if p.placement <= 4 {
+                    e.top4 += 1;
+                }
+            }
+        }
+        let mut stats: Vec<CompStat> = map.into_values().collect();
+        stats.sort_by(|a, b| b.appearances.cmp(&a.appearances));
+        // 转成 MetaComp（不含名称，前端可再补；这里简单给 id/占比）
+        let comps = stats
+            .into_iter()
+            .map(|s| {
+                let name = s.id.clone();
+                crate::models::MetaComp {
+                    id: name.clone(),
+                    name,
+                    icon_url: String::new(),
+                    appearances: s.appearances,
+                    win_rate: s.win_rate(),
+                    top4_rate: s.top4_rate(),
+                    win_share: s.wins as f64 / (day_matches.len().max(1) as f64),
+                    top4_share: s.top4 as f64 / ((day_matches.len() * 4).max(1) as f64),
+                }
+            })
+            .collect();
+        out.push(crate::models::DailyRow { date, comps });
+    }
+    out
+}
+
+/// 互害/受益分析：主羁绊 A 与 B 同场时 A 的表现 vs A 全局表现。
+/// 输出「B 在场时 A 的均值名次」低于全局名次，即为被 B 克制。
+pub fn aggregate_counters(
+    matches: &[RiotMatch],
+    min_shared: u32,
+) -> Vec<crate::models::CounterRow> {
+    use std::collections::HashMap;
+    // (a_id, b_id) -> sum placement, count, wins
+    let mut pair: HashMap<(String, String), (f64, u32, u32)> = HashMap::new();
+    // a_id -> 全局 sum placement, count, wins
+    let mut global: HashMap<String, (f64, u32, u32)> = HashMap::new();
+
+    for m in matches {
+        // 收集本局各玩家的主羁绊与名次
+        let comps: Vec<(String, i32, bool)> = m
+            .participants
+            .iter()
+            .filter_map(|p| {
+                primary_trait_of(p).map(|t| (t, p.placement, p.placement == 1))
+            })
+            .collect();
+        for (a, pa, wa) in &comps {
+            let g = global.entry(a.clone()).or_insert((0.0, 0, 0));
+            g.0 += *pa as f64;
+            g.1 += 1;
+            if *wa {
+                g.2 += 1;
+            }
+            for (b, _, _) in comps.iter().filter(|(bb, _, _)| bb != a) {
+                let e = pair.entry((a.clone(), b.clone())).or_insert((0.0, 0, 0));
+                e.0 += *pa as f64;
+                e.1 += 1;
+                if *wa {
+                    e.2 += 1;
+                }
+            }
+        }
+    }
+
+    let mut out = Vec::new();
+    for ((a_id, b_id), (sum, cnt, wins)) in pair {
+        if cnt < min_shared {
+            continue;
+        }
+        let Some(&(_, gcnt, _)) = global.get(&a_id) else { continue };
+        if gcnt == 0 {
+            continue;
+        }
+        out.push(crate::models::CounterRow {
+            a_id: a_id.clone(),
+            a_name: a_id,
+            b_id: b_id.clone(),
+            b_name: b_id,
+            appearances: cnt,
+            a_avg_placement: sum / cnt as f64,
+            a_win_rate: wins as f64 / cnt as f64,
+        });
+    }
+    // 按「同场均值名次 - 全局均值名次」的差异排序（差异大 = 更被克制）
+    out.sort_by(|x, y| {
+        let dx = x.a_avg_placement - (global.get(&x.a_id).map(|g| g.0 / g.1 as f64).unwrap_or(0.0));
+        let dy = y.a_avg_placement - (global.get(&y.a_id).map(|g| g.0 / g.1 as f64).unwrap_or(0.0));
+        dy.partial_cmp(&dx).unwrap_or(std::cmp::Ordering::Equal)
+    });
     out
 }
 

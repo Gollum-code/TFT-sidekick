@@ -188,7 +188,27 @@ pub struct RiotMatch {
     pub match_id: String,
     pub queue_id: i32,
     pub tft_set_number: i32,
+    pub game_creation: Option<i64>,
     pub participants: Vec<ParticipantComp>,
+}
+
+/// 阵容互害/受益：主羁绊 A 与 B 同场时的表现对比。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CounterRow {
+    pub a_id: String,
+    pub a_name: String,
+    pub b_id: String,
+    pub b_name: String,
+    pub appearances: u32,
+    pub a_avg_placement: f64,
+    pub a_win_rate: f64,
+}
+
+/// 阵容含金币均值（用于今日/趋势聚合）。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DailyRow {
+    pub date: String,
+    pub comps: Vec<MetaComp>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -271,6 +291,8 @@ pub struct MetaResult {
     pub items: Vec<MetaItem>,
     pub hero_items: Vec<HeroItemRow>,
     pub comp_details: Vec<CompDetail>,
+    pub daily: Vec<DailyRow>,
+    pub counters: Vec<CounterRow>,
     pub sample_count: u32,
     pub added_count: u32,
 }

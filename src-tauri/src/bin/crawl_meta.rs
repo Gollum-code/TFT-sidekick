@@ -148,6 +148,44 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let comp_details: Vec<CompDetail> =
         tft_sidekick_lib::riot::aggregate_comp_details(&matches, &sd);
 
+    // 3.6 每日统计 / 阵容趋势
+    let mut daily_out: Vec<serde_json::Value> = Vec::new();
+    for d in tft_sidekick_lib::riot::aggregate_daily(&matches) {
+        let comps: Vec<serde_json::Value> = d
+            .comps
+            .iter()
+            .filter(|c| c.appearances >= 2)
+            .map(|c| {
+                serde_json::json!({
+                    "id": c.id,
+                    "name": sd.trait_name(&c.id).map(String::from).unwrap_or_else(|| c.id.clone()),
+                    "icon_url": sd.trait_icon(&c.id).unwrap_or_default(),
+                    "appearances": c.appearances,
+                    "win_share": c.win_share,
+                    "top4_share": c.top4_share,
+                })
+            })
+            .collect();
+        daily_out.push(serde_json::json!({ "date": d.date, "comps": comps }));
+    }
+
+    // 3.7 互害/受益分析
+    let counters: Vec<serde_json::Value> = tft_sidekick_lib::riot::aggregate_counters(&matches, 4)
+        .into_iter()
+        .map(|c| {
+            serde_json::json!({
+                "a_id": c.a_id,
+                "a_name": sd.trait_name(&c.a_id).map(String::from).unwrap_or_else(|| c.a_id.clone()),
+                "b_id": c.b_id,
+                "b_name": sd.trait_name(&c.b_id).map(String::from).unwrap_or_else(|| c.b_id.clone()),
+                "appearances": c.appearances,
+                "a_avg_placement": c.a_avg_placement,
+                "a_win_rate": c.a_win_rate,
+            })
+        })
+        .take(30)
+        .collect();
+
     // 4. 写文件
     eprintln!("[4/4] 写入 {} ...", out.display());
     let output = serde_json::json!({
@@ -159,6 +197,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         "items": item_out,
         "hero_items": hero_out,
         "comp_details": comp_details,
+        "daily": daily_out,
+        "counters": counters,
     });
     std::fs::write(&out, serde_json::to_string_pretty(&output)?)?;
     eprintln!("完成！已写入 {}", out.display());

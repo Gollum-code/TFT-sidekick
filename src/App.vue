@@ -196,11 +196,37 @@ interface CompTraitRow {
   count: number;
 }
 
+interface DailyComp {
+  id: string;
+  name: string;
+  icon_url: string;
+  appearances: number;
+  win_share: number;
+  top4_share: number;
+}
+
+interface DailyRow {
+  date: string;
+  comps: DailyComp[];
+}
+
+interface CounterRow {
+  a_id: string;
+  a_name: string;
+  b_id: string;
+  b_name: string;
+  appearances: number;
+  a_avg_placement: number;
+  a_win_rate: number;
+}
+
 interface MetaResult {
   comps: MetaComp[];
   items: MetaItem[];
   hero_items: HeroItemRow[];
   comp_details: CompDetail[];
+  daily: DailyRow[];
+  counters: CounterRow[];
   sample_count: number;
   added_count: number;
 }
@@ -354,6 +380,14 @@ const itemHeroGroups = computed(() => {
     return tb - ta;
   });
   return out;
+});
+
+// 当前阵容的互害数据（以 selectedComp 为主羁绊，作为 A 的对手列表）
+const compCounters = computed(() => {
+  if (!selectedComp.value || !metaData.value) return [];
+  return metaData.value.counters
+    .filter((c) => c.a_id === selectedComp.value!.id)
+    .slice(0, 10);
 });
 const filteredAugments = computed(() =>
   augments.value.filter((a) => matchName(search.value)(a.name))
@@ -1016,6 +1050,32 @@ onMounted(async () => {
                   </div>
                 </div>
               </section>
+
+              <section class="board-section">
+                <h3>互害 / 受益</h3>
+                <div v-if="compCounters.length > 0" class="counter-list">
+                  <div class="meta-row meta-head">
+                    <span class="meta-name">对阵阵容</span>
+                    <span class="meta-num">同场局</span>
+                    <span class="meta-num">本阵容均名次</span>
+                    <span class="meta-num">吃鸡率</span>
+                  </div>
+                  <div v-for="c in compCounters" :key="c.b_id" class="meta-row">
+                    <span class="meta-name">
+                      <span class="counter-name">{{ c.b_name }}</span>
+                      <span class="counter-delta" :class="{ bad: c.a_avg_placement >= 4.5 }">
+                        {{ Math.round(c.a_avg_placement) >= 5 ? "克制" : (c.a_avg_placement <= 3.5 ? "被克" : "") }}
+                      </span>
+                    </span>
+                    <span class="meta-num">{{ c.appearances }}</span>
+                    <span class="meta-num">{{ c.a_avg_placement.toFixed(2) }}</span>
+                    <span class="meta-num accent">{{ (c.a_win_rate * 100).toFixed(0) }}%</span>
+                  </div>
+                </div>
+                <p v-else class="empty" style="padding: 12px 0; text-align: left">
+                  样本不足，暂未统计互害数据。
+                </p>
+              </section>
             </div>
           </template>
 
@@ -1098,13 +1158,42 @@ onMounted(async () => {
             </div>
           </div>
 
-          <!-- 阵容趋势 / 每日统计（需历史快照，先占位提示） -->
-          <div v-if="metaTab === 'trend'" class="empty">
-            阵容趋势需要多个时间点的样本快照。持续抓取积累后即可展示排名变化。
+          <!-- 每日统计 -->
+          <div v-if="metaTab === 'daily' && metaData.daily.length > 0" class="daily-list">
+            <div v-for="d in metaData.daily" :key="d.date" class="daily-card">
+              <div class="champ-head">
+                <span class="champ-name">{{ d.date }}</span>
+                <span class="muted">{{ d.comps.length }} 阵容</span>
+              </div>
+              <div class="daily-row" v-for="(c, i) in d.comps.slice(0, 8)" :key="c.id">
+                <span class="meta-rank" :class="{ top3: i < 3 }">{{ i + 1 }}</span>
+                <span class="meta-name">
+                  <img v-if="c.icon_url" :src="c.icon_url" :alt="c.name" class="top-icon" />
+                  {{ c.name }}
+                </span>
+                <span class="meta-num">{{ c.appearances }}</span>
+                <span class="meta-num accent">{{ (c.win_share * 100).toFixed(1) }}%</span>
+              </div>
+            </div>
           </div>
-          <div v-if="metaTab === 'daily'" class="empty">
-            每日统计需要逐日快照。持续抓取积累后即可展示每日阵容/装备变化。
+          <div v-else-if="metaTab === 'daily' && !metaLoading" class="empty">暂无每日数据。</div>
+
+          <!-- 阵容趋势：跨日占比变化 -->
+          <div v-if="metaTab === 'trend' && metaData.daily.length > 0" class="trend-list">
+            <div v-for="d in metaData.daily" :key="d.date" class="trend-card">
+              <div class="champ-name">{{ d.date }}</div>
+              <div class="trend-bars">
+                <div v-for="c in d.comps.slice(0, 5)" :key="c.id" class="trend-row">
+                  <span class="trend-name">{{ c.name }}</span>
+                  <div class="trend-bar-bg">
+                    <div class="trend-bar" :style="{ width: Math.min(100, c.win_share * 400) + '%' }"></div>
+                  </div>
+                  <span class="trend-val">{{ (c.win_share * 100).toFixed(1) }}%</span>
+                </div>
+              </div>
+            </div>
           </div>
+          <div v-else-if="metaTab === 'trend' && !metaLoading" class="empty">暂无趋势数据。</div>
         </template>
         <p v-else-if="!metaLoading" class="empty">
           暂无 Meta 数据。请在项目根目录运行
@@ -2454,6 +2543,102 @@ button.small {
 
 .meta-rank {
   font-weight: 700;
+  color: var(--dim);
+}
+
+.counter-name {
+  font-weight: 600;
+}
+
+.counter-delta {
+  margin-left: 8px;
+  font-size: 12px;
+  padding: 2px 7px;
+  border-radius: 4px;
+}
+
+.counter-delta.bad {
+  background: rgba(240, 85, 85, 0.12);
+  color: #f55a5a;
+}
+
+.daily-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.daily-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px;
+}
+
+.daily-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.daily-row:last-child {
+  border-bottom: none;
+}
+
+.trend-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.trend-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px;
+}
+
+.trend-bars {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.trend-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.trend-name {
+  width: 110px;
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.trend-bar-bg {
+  flex: 1;
+  height: 12px;
+  background: #26262c;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.trend-bar {
+  height: 100%;
+  background: linear-gradient(90deg, var(--gold), var(--purple));
+  border-radius: 4px;
+}
+
+.trend-val {
+  min-width: 50px;
+  text-align: right;
+  font-size: 12px;
   color: var(--dim);
 }
 
