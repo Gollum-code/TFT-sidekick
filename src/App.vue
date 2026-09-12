@@ -321,6 +321,40 @@ const filteredChampions = computed(() =>
 const filteredTraits = computed(() =>
   traits.value.filter((t) => matchName(search.value)(t.name))
 );
+
+// 反查：每件装备 → 适合哪些弈子（从 hero_items 统计）
+const itemHeroGroups = computed(() => {
+  if (!metaData.value) return [];
+  const groups: Record<string, { itemId: string; itemName: string; itemIcon: string; heroes: HeroItem[] }> = {};
+  for (const h of metaData.value.hero_items) {
+    for (const it of h.items) {
+      const g = (groups[it.id] ??= {
+        itemId: it.id,
+        itemName: it.name,
+        itemIcon: it.icon_url,
+        heroes: [],
+      });
+      g.heroes.push({
+        id: h.id,
+        name: h.name,
+        icon_url: h.icon_url,
+        appearances: it.appearances,
+        win_rate: it.win_rate,
+        top4_rate: it.top4_rate,
+      });
+    }
+  }
+  const out = Object.values(groups);
+  for (const g of out) {
+    g.heroes.sort((a, b) => b.appearances - a.appearances);
+  }
+  out.sort((a, b) => {
+    const ta = a.heroes.reduce((s, h) => s + h.appearances, 0);
+    const tb = b.heroes.reduce((s, h) => s + h.appearances, 0);
+    return tb - ta;
+  });
+  return out;
+});
 const filteredAugments = computed(() =>
   augments.value.filter((a) => matchName(search.value)(a.name))
 );
@@ -352,7 +386,7 @@ async function openData() {
 }
 
 const metaData = ref<MetaResult | null>(null);
-const metaTab = ref<"comps" | "items" | "heroes">("comps");
+const metaTab = ref<"comps" | "trend" | "daily" | "items" | "heroes" | "item_heroes">("comps");
 const metaLoading = ref(false);
 const selectedComp = ref<CompDetail | null>(null);
 
@@ -419,12 +453,15 @@ const navGroups: {
   },
   {
     key: "meta",
-    label: "Meta",
+    label: "数据",
     icon: "★",
     children: [
-      { label: "阵容榜", go: () => (metaTab.value = "comps") },
-      { label: "装备榜", go: () => (metaTab.value = "items") },
-      { label: "英雄装备", go: () => (metaTab.value = "heroes") },
+      { label: "环境总览", go: () => (metaTab.value = "comps") },
+      { label: "阵容趋势", go: () => (metaTab.value = "trend") },
+      { label: "每日统计", go: () => (metaTab.value = "daily") },
+      { label: "神器纹章", go: () => (metaTab.value = "items") },
+      { label: "按弈子", go: () => (metaTab.value = "heroes") },
+      { label: "按装备", go: () => (metaTab.value = "item_heroes") },
     ],
   },
 ];
@@ -884,12 +921,29 @@ onMounted(async () => {
         <p v-if="error" class="error">{{ error }}</p>
 
         <template v-if="metaData">
-          <div class="tabs">
+          <div class="tabs tabs-group">
+            <span class="tabs-group-label">环境</span>
             <button
               v-for="t in [
-                { key: 'comps', label: '阵容榜' },
-                { key: 'items', label: '装备榜' },
-                { key: 'heroes', label: '英雄装备' },
+                { key: 'comps', label: '环境总览' },
+                { key: 'trend', label: '阵容趋势' },
+                { key: 'daily', label: '每日统计' },
+              ]"
+              :key="t.key"
+              class="tab"
+              :class="{ active: metaTab === t.key }"
+              @click="metaTab = t.key as any"
+            >
+              {{ t.label }}
+            </button>
+          </div>
+          <div class="tabs tabs-group">
+            <span class="tabs-group-label">装备</span>
+            <button
+              v-for="t in [
+                { key: 'items', label: '神器纹章' },
+                { key: 'heroes', label: '按弈子' },
+                { key: 'item_heroes', label: '按装备' },
               ]"
               :key="t.key"
               class="tab"
@@ -1012,7 +1066,7 @@ onMounted(async () => {
             </div>
           </div>
 
-          <!-- 英雄装备 -->
+          <!-- 按弈子 -->
           <div v-if="metaTab === 'heroes' && metaData.hero_items.length > 0" class="hero-item-list">
             <div v-for="h in metaData.hero_items" :key="h.id" class="hero-item-card">
               <div class="champ-head">
@@ -1026,6 +1080,30 @@ onMounted(async () => {
                 <span class="meta-num accent green">{{ (it.top4_rate * 100).toFixed(1) }}%</span>
               </div>
             </div>
+          </div>
+
+          <!-- 按装备：反查每件装备适合哪些弈子 -->
+          <div v-if="metaTab === 'item_heroes'" class="hero-item-list">
+            <div v-for="g in itemHeroGroups" :key="g.itemId" class="hero-item-card">
+              <div class="champ-head">
+                <img v-if="g.itemIcon" :src="g.itemIcon" :alt="g.itemName" class="champ-icon" />
+                <span class="champ-name">{{ g.itemName || g.itemId }}</span>
+              </div>
+              <div class="hero-item-row" v-for="h in g.heroes.slice(0, 6)" :key="h.id">
+                <img v-if="h.icon_url" :src="h.icon_url" :alt="h.name" class="top-icon" />
+                <span class="top-name">{{ h.name || h.id }}</span>
+                <span class="meta-num">{{ h.appearances }}</span>
+                <span class="meta-num accent green">{{ (h.top4_rate * 100).toFixed(1) }}%</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- 阵容趋势 / 每日统计（需历史快照，先占位提示） -->
+          <div v-if="metaTab === 'trend'" class="empty">
+            阵容趋势需要多个时间点的样本快照。持续抓取积累后即可展示排名变化。
+          </div>
+          <div v-if="metaTab === 'daily'" class="empty">
+            每日统计需要逐日快照。持续抓取积累后即可展示每日阵容/装备变化。
           </div>
         </template>
         <p v-else-if="!metaLoading" class="empty">
