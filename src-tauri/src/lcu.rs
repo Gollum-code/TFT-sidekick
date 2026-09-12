@@ -61,6 +61,43 @@ pub struct LcuCredentials {
     pub source: CredentialSource,
 }
 
+#[derive(Debug, Clone, Default)]
+pub struct RankedStats {
+    pub tier: String,
+    pub division: String,
+    pub league_points: i32,
+    pub wins: i32,
+    pub losses: i32,
+}
+
+impl RankedStats {
+    pub fn win_rate(&self) -> f64 {
+        let total = self.wins + self.losses;
+        if total == 0 {
+            0.0
+        } else {
+            self.wins as f64 / total as f64
+        }
+    }
+}
+
+/// 解析 LCU 排位响应中的 TFT 队列。
+fn parse_ranked(json: serde_json::Value) -> RankedStats {
+    let queue = json
+        .get("queueMap")
+        .and_then(|q| q.get("RANKED_TFT"))
+        .or_else(|| json.get("queueMap").and_then(|q| q.get("RANKED_TFT_TURBO")));
+    let mut out = RankedStats::default();
+    if let Some(q) = queue {
+        out.tier = q.get("tier").and_then(|v| v.as_str()).unwrap_or("").to_string();
+        out.division = q.get("division").and_then(|v| v.as_str()).unwrap_or("").to_string();
+        out.league_points = q.get("leaguePoints").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
+        out.wins = q.get("wins").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
+        out.losses = q.get("losses").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
+    }
+    out
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CurrentSummoner {
@@ -139,6 +176,12 @@ impl LcuClient {
     pub async fn gameflow_phase(&self) -> Result<String, LcuError> {
         let json = self.get_json("/lol-gameflow/v1/gameflow-phase").await?;
         Ok(json.as_str().unwrap_or("").to_string())
+    }
+
+    /// 当前 TFT 排位（段位/胜点/胜率）。
+    pub async fn ranked_stats(&self) -> Result<RankedStats, LcuError> {
+        let json = self.get_json("/lol-ranked/v1/current-ranked-stats").await?;
+        Ok(parse_ranked(json))
     }
 
     pub async fn current_summoner(&self) -> Result<CurrentSummoner, LcuError> {

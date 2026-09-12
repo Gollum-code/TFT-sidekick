@@ -174,6 +174,20 @@ pub struct RulesSection {
     pub rows: Vec<Vec<String>>,
 }
 
+/// 对局中悬浮窗展示的个人信息摘要。
+#[derive(Debug, Clone, Serialize, Default)]
+pub struct Profile {
+    pub rank_tier: String,
+    pub rank_division: String,
+    pub rank_lp: i32,
+    pub rank_wins: i32,
+    pub rank_losses: i32,
+    pub win_rate: f64,
+    pub top4_rate: f64,
+    pub avg_placement: f64,
+    pub total: u32,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ParticipantComp {
     pub placement: i32,

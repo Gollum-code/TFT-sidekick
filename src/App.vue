@@ -196,6 +196,18 @@ interface CompTraitRow {
   count: number;
 }
 
+interface Profile {
+  rank_tier: string;
+  rank_division: string;
+  rank_lp: number;
+  rank_wins: number;
+  rank_losses: number;
+  win_rate: number;
+  top4_rate: number;
+  avg_placement: number;
+  total: number;
+}
+
 interface DailyComp {
   id: string;
   name: string;
@@ -262,14 +274,21 @@ function showToast(msg: string) {
 
 const overlayMatches = ref<MatchSummary[]>([]);
 const overlayAvg = ref("");
+const overlayProfile = ref<Profile | null>(null);
 
 async function loadOverlay() {
   try {
-    overlayMatches.value = await invoke<MatchSummary[]>("list_matches", { limit: 8 });
-    const p = overlayMatches.value.map((m) => m.placement);
-    if (p.length > 0) {
-      overlayAvg.value = (p.reduce((a, b) => a + b, 0) / p.length).toFixed(2);
-    }
+    const [matches, profile] = await Promise.all([
+      invoke<MatchSummary[]>("list_matches", { limit: 8 }),
+      invoke<Profile>("get_profile"),
+    ]);
+    overlayMatches.value = matches;
+    const p = matches.map((m) => m.placement);
+    overlayAvg.value =
+      p.length > 0
+        ? (p.reduce((a, b) => a + b, 0) / p.length).toFixed(1)
+        : "";
+    overlayProfile.value = profile;
   } catch {
     /* 静默失败 */
   }
@@ -622,6 +641,11 @@ onMounted(async () => {
       <span class="overlay-title">TFT Sidekick</span>
       <span v-if="overlayAvg" class="overlay-avg">均名次 {{ overlayAvg }}</span>
       <button class="overlay-close" title="关闭" @click="toggleOverlay">✕</button>
+    </div>
+    <div v-if="overlayProfile" class="overlay-rank">
+      {{ overlayProfile.rank_tier }} {{ overlayProfile.rank_division }}
+      <span class="overlay-lp">{{ overlayProfile.rank_lp }} LP</span>
+      <span class="overlay-winrate">{{ (overlayProfile.win_rate * 100).toFixed(1) }}% WR</span>
     </div>
     <div class="overlay-places">
       <span
@@ -2114,6 +2138,24 @@ button.small {
   margin-left: auto;
   color: var(--gold);
   font-size: 12px;
+}
+
+.overlay-rank {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--gold-bright);
+}
+
+.overlay-lp {
+  margin-left: 6px;
+  color: var(--text);
+  font-weight: 600;
+}
+
+.overlay-winrate {
+  margin-left: 6px;
+  color: var(--green);
+  font-weight: 600;
 }
 
 .overlay-close {

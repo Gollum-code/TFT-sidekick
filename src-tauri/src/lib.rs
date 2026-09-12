@@ -14,7 +14,7 @@ use tauri::{AppHandle, Emitter, Manager, State, WebviewUrl, WebviewWindowBuilder
 use crate::lcu::LcuClient;
 use crate::models::{
     AppInfo, ChampionData, EnrichedMatch, ItemData, MatchSummary, HeroItemRow, MetaComp, MetaItem,
-    MetaResult, NamedCount, RulesSection, ShopOddsLevel, Stats, SyncResult, TraitData,
+    MetaResult, NamedCount, Profile, RulesSection, ShopOddsLevel, Stats, SyncResult, TraitData,
 };
 use crate::static_data::StaticData;
 
@@ -272,6 +272,52 @@ async fn get_meta(state: State<'_, AppState>) -> Result<MetaResult, String> {
     })
 }
 
+/// 对局中悬浮窗的个人信息：段位 + 历史战绩摘要。
+#[tauri::command]
+async fn get_profile(state: State<'_, AppState>) -> Result<Profile, String> {
+    let ranked = {
+        let mut lcu = state.lcu.lock().await;
+        if !lcu.is_connected() {
+            lcu.discover_and_connect().map_err(|e| e.to_string())?;
+        }
+        lcu.ranked_stats().await.map_err(|e| e.to_string())?
+    };
+
+    let (wins, top4, sum_placement, total) = {
+        let db = state.db.lock().map_err(|e| e.to_string())?;
+        let ms = db.list_matches(100).map_err(|e| e.to_string())?;
+        let mut wins = 0u32;
+        let mut top4 = 0u32;
+        let mut sum_placement = 0f64;
+        for m in &ms {
+            if m.placement == 1 {
+                wins += 1;
+            }
+            if m.placement <= 4 {
+                top4 += 1;
+            }
+            sum_placement += m.placement as f64;
+        }
+        (wins, top4, sum_placement, ms.len() as u32)
+    };
+
+    Ok(Profile {
+        rank_tier: ranked.tier,
+        rank_division: ranked.division,
+        rank_lp: ranked.league_points,
+        rank_wins: ranked.wins,
+        rank_losses: ranked.losses,
+        win_rate: if total > 0 { wins as f64 / total as f64 } else { 0.0 },
+        top4_rate: if total > 0 { top4 as f64 / total as f64 } else { 0.0 },
+        avg_placement: if total > 0 {
+            sum_placement / total as f64
+        } else {
+            0.0
+        },
+        total,
+    })
+}
+
 async fn do_sync(
     lcu: &Arc<tokio::sync::Mutex<LcuClient>>,
     db: &Arc<Mutex<db::Database>>,
@@ -507,7 +553,8 @@ pub fn run() {
             get_augments,
             get_shop_odds,
             get_game_rules,
-            get_meta
+            get_meta,
+            get_profile
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
