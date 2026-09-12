@@ -166,10 +166,39 @@ interface HeroItemRow {
   items: HeroItem[];
 }
 
+interface CompDetail {
+  id: string;
+  name: string;
+  icon_url: string;
+  appearances: number;
+  win_rate: number;
+  top4_rate: number;
+  avg_placement: number;
+  units: CompUnit[];
+  traits: CompTraitRow[];
+}
+
+interface CompUnit {
+  id: string;
+  name: string;
+  icon_url: string;
+  count: number;
+  rate: number;
+  avg_tier: number;
+  items: HeroItem[];
+}
+
+interface CompTraitRow {
+  id: string;
+  name: string;
+  count: number;
+}
+
 interface MetaResult {
   comps: MetaComp[];
   items: MetaItem[];
   hero_items: HeroItemRow[];
+  comp_details: CompDetail[];
   sample_count: number;
   added_count: number;
 }
@@ -339,11 +368,49 @@ async function getMeta() {
   }
 }
 
+const navGroups: {
+  key: "matches" | "stats" | "data" | "meta";
+  label: string;
+  icon: string;
+  children?: { label: string; go: () => void }[];
+}[] = [
+  { key: "matches", label: "战绩", icon: "◉" },
+  { key: "stats", label: "统计", icon: "▤" },
+  {
+    key: "data",
+    label: "数据表",
+    icon: "▦",
+    children: [
+      { label: "装备合成", go: () => (dataTab.value = "items") },
+      { label: "英雄", go: () => (dataTab.value = "champions") },
+      { label: "羁绊", go: () => (dataTab.value = "traits") },
+      { label: "海克斯", go: () => (dataTab.value = "augments") },
+      { label: "商店概率", go: () => (dataTab.value = "odds") },
+      { label: "机制", go: () => (dataTab.value = "rules") },
+    ],
+  },
+  {
+    key: "meta",
+    label: "Meta",
+    icon: "★",
+    children: [
+      { label: "阵容榜", go: () => (metaTab.value = "comps") },
+      { label: "装备榜", go: () => (metaTab.value = "items") },
+      { label: "英雄装备", go: () => (metaTab.value = "heroes") },
+    ],
+  },
+];
+
 function setView(v: "matches" | "stats" | "data" | "meta") {
   view.value = v;
   if (v === "stats") openStats();
   if (v === "data") openData();
   if (v === "meta") getMeta();
+}
+
+function navGo(v: "matches" | "stats" | "data" | "meta", child?: { go: () => void }) {
+  setView(v);
+  if (child) child.go();
 }
 
 function pct(x: number) {
@@ -494,10 +561,28 @@ onMounted(async () => {
         </div>
       </div>
       <nav>
-        <a class="nav-item" :class="{ active: view === 'matches' }" @click="setView('matches')"><span class="nav-ico">◉</span>战绩</a>
-        <a class="nav-item" :class="{ active: view === 'stats' }" @click="setView('stats')"><span class="nav-ico">▤</span>统计</a>
-        <a class="nav-item" :class="{ active: view === 'data' }" @click="setView('data')"><span class="nav-ico">▦</span>数据表</a>
-        <a class="nav-item" :class="{ active: view === 'meta' }" @click="setView('meta')"><span class="nav-ico">★</span>Meta</a>
+        <div
+          v-for="g in navGroups"
+          :key="g.key"
+          class="nav-group"
+        >
+          <a
+            class="nav-item"
+            :class="{ active: view === g.key }"
+            @click="navGo(g.key)"
+          >
+            <span class="nav-ico">{{ g.icon }}</span>{{ g.label }}
+            <span v-if="g.children && g.children.length" class="nav-caret">▾</span>
+          </a>
+          <div v-if="g.children && g.children.length" class="nav-sub">
+            <a
+              v-for="c in g.children"
+              :key="c.label"
+              class="nav-sub-item"
+              @click="navGo(g.key, c)"
+            >{{ c.label }}</a>
+          </div>
+        </div>
       </nav>
       <div class="sidebar-footer">
         <div class="lcu-status" :class="summoner ? 'ok' : 'off'">
@@ -1136,8 +1221,71 @@ nav {
   margin-top: 26px;
 }
 
+.nav-group {
+  position: relative;
+}
+
+.nav-group:hover > .nav-sub {
+  display: block;
+  animation: navFade 0.15s ease-out;
+}
+
+.nav-group:hover .nav-caret {
+  transform: rotate(180deg);
+  color: var(--gold);
+}
+
+.nav-caret {
+  margin-left: auto;
+  font-size: 10px;
+  color: var(--faint);
+  transition: transform 0.2s, color 0.2s;
+}
+
+.nav-sub {
+  display: none;
+  position: absolute;
+  left: calc(100% + 6px);
+  top: 0;
+  min-width: 150px;
+  background: #1a1a25;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 6px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.5);
+  z-index: 200;
+}
+
+.nav-sub-item {
+  display: block;
+  padding: 8px 12px;
+  border-radius: 6px;
+  color: var(--dim);
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+
+.nav-sub-item:hover {
+  background: rgba(240, 194, 75, 0.12);
+  color: var(--gold-bright);
+}
+
+@keyframes navFade {
+  from {
+    opacity: 0;
+    transform: translateX(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
 .nav-item {
   position: relative;
+  display: flex;
+  align-items: center;
   padding: 9px 12px;
   border-radius: 8px;
   color: var(--dim);

@@ -4,6 +4,7 @@ version = "0.1.0"
 description = "TFT Sidekick - a TFT backend data assistant for CN server"
 authors = ["you"]
 edition = "2021"
+default-run = "tft-sidekick"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 

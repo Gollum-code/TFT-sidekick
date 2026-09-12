@@ -199,6 +199,10 @@ pub struct MetaComp {
     pub appearances: u32,
     pub win_rate: f64,
     pub top4_rate: f64,
+    #[serde(default)]
+    pub win_share: f64,
+    #[serde(default)]
+    pub top4_share: f64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -229,11 +233,44 @@ pub struct HeroItemRow {
     pub items: Vec<HeroItem>,
 }
 
+/// 阵容详情：某主羁绊阵容的构成与统计。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CompDetail {
+    pub id: String,
+    pub name: String,
+    pub icon_url: String,
+    pub appearances: u32,
+    pub win_rate: f64,
+    pub top4_rate: f64,
+    pub avg_placement: f64,
+    pub units: Vec<CompUnit>,
+    pub traits: Vec<CompTraitRow>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CompUnit {
+    pub id: String,
+    pub name: String,
+    pub icon_url: String,
+    pub count: u32,
+    pub rate: f64,
+    pub avg_tier: f64,
+    pub items: Vec<HeroItem>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CompTraitRow {
+    pub id: String,
+    pub name: String,
+    pub count: u32,
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct MetaResult {
     pub comps: Vec<MetaComp>,
     pub items: Vec<MetaItem>,
     pub hero_items: Vec<HeroItemRow>,
+    pub comp_details: Vec<CompDetail>,
     pub sample_count: u32,
     pub added_count: u32,
 }

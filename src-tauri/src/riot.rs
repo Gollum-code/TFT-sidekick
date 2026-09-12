@@ -12,6 +12,7 @@ use thiserror::Error;
 
 use crate::lcu::{map_traits, map_units};
 use crate::models::{ParticipantComp, RiotMatch};
+use crate::static_data::StaticData;
 
 #[derive(Debug, Error)]
 pub enum RiotError {
@@ -327,6 +328,156 @@ pub fn aggregate_unit_items(matches: &[RiotMatch]) -> Vec<HeroItemStat> {
             .cmp(&a.appearances)
             .then_with(|| b.top4.cmp(&a.top4))
     });
+    out
+}
+
+/// 按「主羁绊」聚合，输出阵容构成详情（核心棋子、装备、羁绊）。
+pub fn aggregate_comp_details(
+    matches: &[RiotMatch],
+    sd: &StaticData,
+) -> Vec<crate::models::CompDetail> {
+    #[derive(Default)]
+    struct UnitAgg {
+        count: u32,
+        sum_tier: f64,
+        items: HashMap<String, u32>,
+    }
+    #[derive(Default)]
+    struct CompAgg {
+        appearances: u32,
+        wins: u32,
+        top4: u32,
+        sum_placement: f64,
+        units: HashMap<String, UnitAgg>,
+        traits: HashMap<String, u32>,
+    }
+
+    let mut comp_agg: HashMap<String, CompAgg> = HashMap::new();
+    for m in matches {
+        for p in &m.participants {
+            let primary = p
+                .traits
+                .iter()
+                .filter(|t| t.tier_current.unwrap_or(0) > 0)
+                .max_by_key(|t| t.tier_total.unwrap_or(0))
+                .map(|t| t.trait_id.clone());
+            let Some(pkey) = primary else {
+                continue;
+            };
+            let agg = comp_agg.entry(pkey.clone()).or_default();
+            agg.appearances += 1;
+            if p.placement == 1 {
+                agg.wins += 1;
+            }
+            if p.placement <= 4 {
+                agg.top4 += 1;
+            }
+            agg.sum_placement += p.placement as f64;
+            for u in &p.units {
+                let ue = agg.units.entry(u.character_id.clone()).or_default();
+                ue.count += 1;
+                ue.sum_tier += u.tier.unwrap_or(0) as f64;
+                for it in &u.items {
+                    *ue.items.entry(it.clone()).or_insert(0) += 1;
+                }
+            }
+            for t in &p.traits {
+                if t.tier_current.unwrap_or(0) > 0 {
+                    *agg.traits.entry(t.trait_id.clone()).or_insert(0) += 1;
+                }
+            }
+        }
+    }
+
+    let mut out: Vec<crate::models::CompDetail> = comp_agg
+        .iter()
+        .map(|(pkey, agg)| {
+            let mut units: Vec<crate::models::CompUnit> = agg
+                .units
+                .iter()
+                .map(|(id, ua)| {
+                    let top_items = ua
+                        .items
+                        .iter()
+                        .map(|(iid, cnt)| crate::models::HeroItem {
+                            id: iid.clone(),
+                            name: sd
+                                .item_name(iid)
+                                .map(String::from)
+                                .unwrap_or_else(|| iid.clone()),
+                            icon_url: sd.item_icon(iid).unwrap_or_default(),
+                            appearances: *cnt,
+                            win_rate: 0.0,
+                            top4_rate: 0.0,
+                        })
+                        .collect();
+                    crate::models::CompUnit {
+                        id: id.clone(),
+                        name: sd
+                            .champion_name(id)
+                            .map(String::from)
+                            .unwrap_or_else(|| id.clone()),
+                        icon_url: sd.champion_icon(id).unwrap_or_default(),
+                        count: ua.count,
+                        rate: if agg.appearances > 0 {
+                            ua.count as f64 / agg.appearances as f64
+                        } else {
+                            0.0
+                        },
+                        avg_tier: if ua.count > 0 {
+                            ua.sum_tier / ua.count as f64
+                        } else {
+                            0.0
+                        },
+                        items: top_items,
+                    }
+                })
+                .collect();
+            units.sort_by(|a, b| b.count.cmp(&a.count));
+
+            let mut traits: Vec<crate::models::CompTraitRow> = agg
+                .traits
+                .iter()
+                .map(|(tid, cnt)| crate::models::CompTraitRow {
+                    id: tid.clone(),
+                    name: sd
+                        .trait_name(tid)
+                        .map(String::from)
+                        .unwrap_or_else(|| tid.clone()),
+                    count: *cnt,
+                })
+                .collect();
+            traits.sort_by(|a, b| b.count.cmp(&a.count));
+
+            crate::models::CompDetail {
+                id: pkey.clone(),
+                name: sd
+                    .trait_name(pkey)
+                    .map(String::from)
+                    .unwrap_or_else(|| pkey.clone()),
+                icon_url: sd.trait_icon(pkey).unwrap_or_default(),
+                appearances: agg.appearances,
+                win_rate: if agg.appearances > 0 {
+                    agg.wins as f64 / agg.appearances as f64
+                } else {
+                    0.0
+                },
+                top4_rate: if agg.appearances > 0 {
+                    agg.top4 as f64 / agg.appearances as f64
+                } else {
+                    0.0
+                },
+                avg_placement: if agg.appearances > 0 {
+                    agg.sum_placement / agg.appearances as f64
+                } else {
+                    0.0
+                },
+                units,
+                traits,
+            }
+        })
+        .collect();
+    out.sort_by(|a, b| b.appearances.cmp(&a.appearances));
     out
 }
 

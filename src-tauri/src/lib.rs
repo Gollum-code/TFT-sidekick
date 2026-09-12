@@ -234,12 +234,13 @@ async fn get_meta(state: State<'_, AppState>) -> Result<MetaResult, String> {
             .unwrap_or(serde_json::json!([])),
     )
     .unwrap_or_default();
-    let hero_items: Vec<HeroItemRow> = serde_json::from_value(
-        v.get("hero_items")
+    let comp_details: Vec<crate::models::CompDetail> = serde_json::from_value(
+        v.get("comp_details")
             .cloned()
             .unwrap_or(serde_json::json!([])),
     )
     .unwrap_or_default();
+
     let sample_count = v
         .get("sample_count")
         .and_then(|x| x.as_u64())
@@ -249,6 +250,7 @@ async fn get_meta(state: State<'_, AppState>) -> Result<MetaResult, String> {
         comps,
         items,
         hero_items,
+        comp_details,
         sample_count,
         added_count: 0,
     })

@@ -6,7 +6,9 @@
 
 use std::path::PathBuf;
 
-use tft_sidekick_lib::models::{HeroItem, HeroItemRow, MetaComp, MetaItem};
+use tft_sidekick_lib::models::{
+    CompDetail, HeroItem, HeroItemRow, MetaComp, MetaItem,
+};
 use tft_sidekick_lib::riot::{
     aggregate_comps, aggregate_items, aggregate_unit_items, crawl_matches, RiotClient,
 };
@@ -49,6 +51,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let comp_stats = aggregate_comps(&matches);
     let item_stats = aggregate_items(&matches);
 
+    let total_matches = matches.len() as f64;
     let mut comp_out: Vec<MetaComp> = comp_stats
         .into_iter()
         .filter(|s| s.appearances >= 2)
@@ -64,12 +67,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 appearances: s.appearances,
                 win_rate: s.win_rate(),
                 top4_rate: s.top4_rate(),
+                // 登顶占比 = 吃鸡局 / 总对局；前四占比 = 前四局 / (总对局×4)
+                win_share: s.wins as f64 / total_matches,
+                top4_share: s.top4 as f64 / (total_matches * 4.0),
             }
         })
         .collect();
     comp_out.sort_by(|a, b| {
-        b.top4_rate
-            .partial_cmp(&a.top4_rate)
+        b.top4_share
+            .partial_cmp(&a.top4_share)
             .unwrap_or(std::cmp::Ordering::Equal)
     });
 
@@ -138,6 +144,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         total_b.cmp(&total_a)
     });
 
+    // 3.5 阵容详情：按主羁绊分组的构成与统计
+    let comp_details: Vec<CompDetail> =
+        tft_sidekick_lib::riot::aggregate_comp_details(&matches, &sd);
+
     // 4. 写文件
     eprintln!("[4/4] 写入 {} ...", out.display());
     let output = serde_json::json!({
@@ -148,6 +158,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         "comps": comp_out,
         "items": item_out,
         "hero_items": hero_out,
+        "comp_details": comp_details,
     });
     std::fs::write(&out, serde_json::to_string_pretty(&output)?)?;
     eprintln!("完成！已写入 {}", out.display());
