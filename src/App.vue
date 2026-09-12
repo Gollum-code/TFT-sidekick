@@ -139,6 +139,8 @@ interface MetaComp {
   appearances: number;
   win_rate: number;
   top4_rate: number;
+  win_share: number;
+  top4_share: number;
 }
 
 interface MetaItem {
@@ -352,6 +354,32 @@ async function openData() {
 const metaData = ref<MetaResult | null>(null);
 const metaTab = ref<"comps" | "items" | "heroes">("comps");
 const metaLoading = ref(false);
+const selectedComp = ref<CompDetail | null>(null);
+
+function showCompDetail(compId: string) {
+  selectedComp.value = metaData.value?.comp_details.find((d) => d.id === compId) ?? null;
+  if (!selectedComp.value) {
+    // 数据里没有详情时，用 comps 条目的简单信息兜底
+    const c = metaData.value?.comps.find((x) => x.id === compId);
+    if (c) {
+      selectedComp.value = {
+        id: c.id,
+        name: c.name,
+        icon_url: c.icon_url,
+        appearances: c.appearances,
+        win_rate: c.win_rate,
+        top4_rate: c.top4_rate,
+        avg_placement: 0,
+        units: [],
+        traits: [],
+      };
+    }
+  }
+}
+
+function closeCompDetail() {
+  selectedComp.value = null;
+}
 
 async function getMeta() {
   metaLoading.value = true;
@@ -872,24 +900,94 @@ onMounted(async () => {
             </button>
           </div>
 
+          <!-- 阵容详情 -->
+          <template v-if="selectedComp">
+            <div class="comp-detail">
+              <header class="topbar">
+                <button class="ghost" @click="closeCompDetail">← 返回</button>
+                <h2 class="detail-title">
+                  <img v-if="selectedComp.icon_url" :src="selectedComp.icon_url" :alt="selectedComp.name" class="top-icon" />
+                  {{ selectedComp.name }}
+                </h2>
+                <span class="muted">{{ selectedComp.appearances }} 局</span>
+              </header>
+
+              <div class="comp-stat-cards">
+                <div class="stat-card">
+                  <div class="stat-value">{{ (selectedComp.win_rate * 100).toFixed(1) }}%</div>
+                  <div class="stat-label">吃鸡率</div>
+                </div>
+                <div class="stat-card">
+                  <div class="stat-value">{{ (selectedComp.top4_rate * 100).toFixed(1) }}%</div>
+                  <div class="stat-label">前四率</div>
+                </div>
+                <div class="stat-card">
+                  <div class="stat-value">{{ selectedComp.avg_placement.toFixed(2) }}</div>
+                  <div class="stat-label">平均名次</div>
+                </div>
+              </div>
+
+              <section class="board-section">
+                <h3>阵容构成</h3>
+                <div class="board">
+                  <div
+                    v-for="u in selectedComp.units"
+                    :key="u.id"
+                    class="unit-card"
+                    :style="{ opacity: 0.35 + u.rate }"
+                  >
+                    <div class="unit-icon-wrap">
+                      <img v-if="u.icon_url" :src="u.icon_url" :alt="u.name" class="unit-icon" />
+                      <div v-if="u.avg_tier" class="stars">
+                        {{ "★".repeat(Math.max(1, Math.round(u.avg_tier))) }}
+                      </div>
+                    </div>
+                    <div class="unit-name">{{ u.name || u.id }}</div>
+                    <div class="unit-sub">{{ (u.rate * 100).toFixed(0) }}% · {{ u.count }} 局</div>
+                    <div class="unit-items">
+                      <div v-for="it in u.items.slice(0, 3)" :key="it.id" class="item" :title="it.name">
+                        <img v-if="it.icon_url" :src="it.icon_url" :alt="it.name" />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </section>
+
+              <section class="board-section">
+                <h3>常见羁绊</h3>
+                <div class="traits">
+                  <div v-for="t in selectedComp.traits" :key="t.id" class="trait">
+                    <span class="trait-name">{{ t.name || t.id }}</span>
+                    <span class="trait-tier">{{ t.count }} 局</span>
+                  </div>
+                </div>
+              </section>
+            </div>
+          </template>
+
           <!-- 阵容榜 -->
-          <div v-if="metaTab === 'comps' && metaData.comps.length > 0" class="meta-list">
+          <div v-else-if="metaTab === 'comps' && metaData.comps.length > 0" class="meta-list">
             <div class="meta-row meta-head">
               <span class="meta-rank">#</span>
               <span class="meta-name">阵容（主羁绊）</span>
               <span class="meta-num">场次</span>
-              <span class="meta-num">吃鸡率</span>
-              <span class="meta-num">前四率</span>
+              <span class="meta-num">登顶占比</span>
+              <span class="meta-num">前四占比</span>
             </div>
-            <div v-for="(c, i) in metaData.comps" :key="c.id" class="meta-row">
+            <div
+              v-for="(c, i) in metaData.comps"
+              :key="c.id"
+              class="meta-row comp-row"
+              @click="showCompDetail(c.id)"
+            >
               <span class="meta-rank" :class="{ top3: i < 3 }">{{ i + 1 }}</span>
               <span class="meta-name">
                 <img v-if="c.icon_url" :src="c.icon_url" :alt="c.name" class="top-icon" />
                 {{ c.name }}
               </span>
               <span class="meta-num">{{ c.appearances }}</span>
-              <span class="meta-num accent">{{ (c.win_rate * 100).toFixed(1) }}%</span>
-              <span class="meta-num accent green">{{ (c.top4_rate * 100).toFixed(1) }}%</span>
+              <span class="meta-num accent">{{ (c.win_share * 100).toFixed(2) }}%</span>
+              <span class="meta-num accent green">{{ (c.top4_share * 100).toFixed(2) }}%</span>
             </div>
           </div>
 
@@ -1629,6 +1727,20 @@ button.small {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.unit-sub {
+  font-size: 11px;
+  color: var(--dim);
+}
+
+.comp-row {
+  cursor: pointer;
+  transition: background 0.12s;
+}
+
+.comp-row:hover {
+  background: var(--card-hover);
 }
 
 .unit-items {
