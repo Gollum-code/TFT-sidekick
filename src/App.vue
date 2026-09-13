@@ -248,7 +248,7 @@ interface RulesSection {
   rows: string[][];
 }
 
-const view = ref<"matches" | "stats" | "data" | "meta">("matches");
+const view = ref<"matches" | "stats" | "comps" | "data" | "meta">("matches");
 const matches = ref<MatchSummary[]>([]);
 const info = ref<AppInfo | null>(null);
 const summoner = ref<SummonerInfo | null>(null);
@@ -332,7 +332,9 @@ async function openStats() {
   }
 }
 
-const dataTab = ref<"items" | "champions" | "traits" | "augments" | "odds" | "rules">("items");
+const dataTab = ref<
+  "overview" | "champions" | "traits" | "items" | "augments" | "wisps" | "odds" | "rules"
+>("overview");
 const dataLoading = ref(false);
 const items = ref<ItemData[]>([]);
 const champions = ref<ChampionData[]>([]);
@@ -366,6 +368,29 @@ const filteredChampions = computed(() =>
 const filteredTraits = computed(() =>
   traits.value.filter((t) => matchName(search.value)(t.name))
 );
+
+// 小精灵（Wisps）：是从 items 里 apiName 含 "Wisp" 的特殊道具
+const wisps = computed(() =>
+  items.value.filter(
+    (i) => i.id.toLowerCase().includes("wisp") && !i.id.toLowerCase().includes("augment")
+  )
+);
+
+// 赛季总览汇总数据
+const overview = computed(() => {
+  const costGroups: Record<number, ChampionData[]> = { 1: [], 2: [], 3: [], 4: [], 5: [] };
+  for (const c of champions.value) {
+    if (costGroups[c.cost]) costGroups[c.cost].push(c);
+  }
+  return {
+    champions: champions.value.length,
+    traits: traits.value.length,
+    items: craftable.value.length + components.value.length,
+    augments: augments.value.length,
+    wisps: wisps.value.length,
+    costGroups,
+  };
+});
 
 // 反查：每件装备 → 适合哪些弈子（从 hero_items 统计）
 const itemHeroGroups = computed(() => {
@@ -411,6 +436,12 @@ const compCounters = computed(() => {
 const filteredAugments = computed(() =>
   augments.value.filter((a) => matchName(search.value)(a.name))
 );
+
+// 从赛季总览点击跳到对应 tab 并搜索
+function openDataTo(tab: "champions" | "traits" | "items", query: string) {
+  dataTab.value = tab;
+  search.value = query;
+}
 
 async function openData() {
   view.value = "data";
@@ -484,13 +515,14 @@ async function getMeta() {
 }
 
 const navGroups: {
-  key: "matches" | "stats" | "data" | "meta";
+  key: "matches" | "stats" | "comps" | "data" | "meta";
   label: string;
   icon: string;
   children?: { label: string; go: () => void }[];
 }[] = [
   { key: "matches", label: "战绩", icon: "◉" },
   { key: "stats", label: "统计", icon: "▤" },
+  { key: "comps", label: "阵容", icon: "♜" },
   {
     key: "data",
     label: "数据表",
@@ -519,14 +551,15 @@ const navGroups: {
   },
 ];
 
-function setView(v: "matches" | "stats" | "data" | "meta") {
+function setView(v: "matches" | "stats" | "comps" | "data" | "meta") {
   view.value = v;
   if (v === "stats") openStats();
   if (v === "data") openData();
   if (v === "meta") getMeta();
+  if (v === "comps") getMeta();
 }
 
-function navGo(v: "matches" | "stats" | "data" | "meta", child?: { go: () => void }) {
+function navGo(v: "matches" | "stats" | "comps" | "data" | "meta", child?: { go: () => void }) {
   setView(v);
   if (child) child.go();
 }
@@ -803,12 +836,14 @@ onMounted(async () => {
         <div class="tabs">
           <button
             v-for="t in [
-              { key: 'items', label: '装备合成' },
-              { key: 'champions', label: '英雄' },
-              { key: 'traits', label: '羁绊' },
-              { key: 'augments', label: '海克斯' },
-              { key: 'odds', label: '商店概率' },
-              { key: 'rules', label: '机制' },
+      { key: 'overview', label: '赛季总览' },
+      { key: 'champions', label: '英雄' },
+      { key: 'traits', label: '羁绊' },
+      { key: 'items', label: '装备合成' },
+      { key: 'augments', label: '海克斯' },
+      { key: 'wisps', label: '小精灵' },
+      { key: 'odds', label: '商店概率' },
+      { key: 'rules', label: '机制' },
             ]"
             :key="t.key"
             class="tab"
@@ -822,8 +857,51 @@ onMounted(async () => {
         <div v-if="dataLoading" class="empty">加载中…</div>
         <p v-if="error" class="error">{{ error }}</p>
 
+        <!-- 赛季总览 -->
+        <template v-if="dataTab === 'overview'">
+          <div class="comp-stat-cards">
+            <div class="stat-card"><div class="stat-value">{{ overview.champions }}</div><div class="stat-label">英雄</div></div>
+            <div class="stat-card"><div class="stat-value">{{ overview.traits }}</div><div class="stat-label">羁绊</div></div>
+            <div class="stat-card"><div class="stat-value">{{ overview.items }}</div><div class="stat-label">装备</div></div>
+            <div class="stat-card"><div class="stat-value">{{ overview.augments }}</div><div class="stat-label">海克斯</div></div>
+            <div class="stat-card"><div class="stat-value">{{ overview.wisps }}</div><div class="stat-label">小精灵</div></div>
+          </div>
+
+          <section class="board-section">
+            <h3>费用分布</h3>
+            <div v-for="(list, cost) in overview.costGroups" :key="'cost' + cost" class="cost-group">
+              <div class="cost-label">
+                <span class="cost" :style="{ color: costColor(Number(cost)) }">{{ "★".repeat(Number(cost)) }}</span>
+                费 · {{ list.length }} 个
+              </div>
+              <div class="champ-list cost-grid">
+                <div v-for="c in list" :key="c.id" class="champ-card" @click="openDataTo('champions', c.name)">
+                  <div class="champ-head">
+                    <img v-if="c.icon_url" :src="c.icon_url" :alt="c.name" class="champ-icon" />
+                    <div class="champ-name">{{ c.name }}</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </section>
+        </template>
+
+        <!-- 小精灵 -->
+        <template v-else-if="dataTab === 'wisps'">
+          <div class="augment-list">
+            <div v-for="w in wisps" :key="w.id" class="augment-card">
+              <img v-if="w.icon_url" :src="w.icon_url" :alt="w.name" class="craft-icon" />
+              <div class="craft-body">
+                <div class="craft-name">{{ w.name || w.id }}</div>
+                <div class="ability-desc">{{ w.desc || "—" }}</div>
+              </div>
+            </div>
+          </div>
+          <p v-if="wisps.length === 0" class="empty">暂无小精灵数据</p>
+        </template>
+
         <!-- 装备合成 -->
-        <template v-if="dataTab === 'items'">
+        <template v-else-if="dataTab === 'items'">
           <section class="board-section">
             <h3>散件</h3>
             <div class="component-list">
@@ -962,6 +1040,108 @@ onMounted(async () => {
               </tbody>
             </table>
           </div>
+        </template>
+      </template>
+
+      <!-- 阵容列表（Comp List） -->
+      <template v-else-if="view === 'comps'">
+        <header class="topbar">
+          <h2>阵容列表</h2>
+          <button @click="getMeta" :disabled="metaLoading">
+            {{ metaLoading ? "加载中…" : "刷新" }}
+          </button>
+        </header>
+        <div class="odds-note">高分段常用阵容（来源：国际服王者/宗师/大师对局）。点击查看详情。</div>
+
+        <div v-if="selectedComp">
+          <!-- 复用阵容详情 -->
+          <div class="comp-detail">
+            <header class="topbar">
+              <button class="ghost" @click="closeCompDetail">← 返回</button>
+              <h2 class="detail-title">
+                <img v-if="selectedComp.icon_url" :src="selectedComp.icon_url" :alt="selectedComp.name" class="top-icon" />
+                {{ selectedComp.name }}
+              </h2>
+              <span class="muted">{{ selectedComp.appearances }} 局</span>
+            </header>
+            <div class="comp-stat-cards">
+              <div class="stat-card"><div class="stat-value">{{ (selectedComp.win_rate * 100).toFixed(1) }}%</div><div class="stat-label">吃鸡率</div></div>
+              <div class="stat-card"><div class="stat-value">{{ (selectedComp.top4_rate * 100).toFixed(1) }}%</div><div class="stat-label">前四率</div></div>
+              <div class="stat-card"><div class="stat-value">{{ selectedComp.avg_placement.toFixed(2) }}</div><div class="stat-label">平均名次</div></div>
+            </div>
+            <section class="board-section">
+              <h3>阵容构成</h3>
+              <div class="board">
+                <div v-for="u in selectedComp.units" :key="u.id" class="unit-card" :style="{ opacity: 0.35 + u.rate }">
+                  <div class="unit-icon-wrap">
+                    <img v-if="u.icon_url" :src="u.icon_url" :alt="u.name" class="unit-icon" />
+                    <div v-if="u.avg_tier" class="stars">{{ "★".repeat(Math.max(1, Math.round(u.avg_tier))) }}</div>
+                  </div>
+                  <div class="unit-name">{{ u.name || u.id }}</div>
+                  <div class="unit-sub">{{ (u.rate * 100).toFixed(0) }}% · {{ u.count }} 局</div>
+                  <div class="unit-items">
+                    <div v-for="it in u.items.slice(0, 3)" :key="it.id" class="item" :title="it.name">
+                      <img v-if="it.icon_url" :src="it.icon_url" :alt="it.name" />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </section>
+            <section class="board-section">
+              <h3>常见羁绊</h3>
+              <div class="traits">
+                <div v-for="t in selectedComp.traits" :key="t.id" class="trait">
+                  <span class="trait-name">{{ t.name || t.id }}</span>
+                  <span class="trait-tier">{{ t.count }} 局</span>
+                </div>
+              </div>
+            </section>
+            <section class="board-section">
+              <h3>互害 / 受益</h3>
+              <div v-if="compCounters.length > 0" class="counter-list">
+                <div class="meta-row meta-head">
+                  <span class="meta-name">对阵阵容</span>
+                  <span class="meta-num">同场局</span>
+                  <span class="meta-num">本阵容均名次</span>
+                  <span class="meta-num">吃鸡率</span>
+                </div>
+                <div v-for="c in compCounters" :key="c.b_id" class="meta-row">
+                  <span class="meta-name">
+                    <span class="counter-name">{{ c.b_name }}</span>
+                    <span class="counter-delta" :class="{ bad: c.a_avg_placement >= 4.5 }">
+                      {{ Math.round(c.a_avg_placement) >= 5 ? "克制" : (c.a_avg_placement <= 3.5 ? "被克" : "") }}
+                    </span>
+                  </span>
+                  <span class="meta-num">{{ c.appearances }}</span>
+                  <span class="meta-num">{{ c.a_avg_placement.toFixed(2) }}</span>
+                  <span class="meta-num accent">{{ (c.a_win_rate * 100).toFixed(0) }}%</span>
+                </div>
+              </div>
+              <p v-else class="empty" style="padding: 12px 0; text-align: left">样本不足，暂未统计互害数据。</p>
+            </section>
+          </div>
+        </div>
+
+        <template v-else>
+          <div v-if="metaData && metaData.comps.length" class="comp-grid">
+            <div
+              v-for="(c, i) in metaData.comps"
+              :key="c.id"
+              class="comp-card"
+              @click="showCompDetail(c.id)"
+            >
+              <div class="comp-card-rank" :class="{ top3: i < 3 }">#{{ i + 1 }}</div>
+              <img v-if="c.icon_url" :src="c.icon_url" :alt="c.name" class="comp-card-icon" />
+              <div class="comp-card-body">
+                <div class="comp-card-name">{{ c.name }}</div>
+                <div class="comp-card-stats">
+                  <span class="accent">登顶 {{ (c.win_share * 100).toFixed(2) }}%</span>
+                  <span class="green">前四 {{ (c.top4_share * 100).toFixed(2) }}%</span>
+                </div>
+              </div>
+            </div>
+          </div>
+          <p v-else class="empty">暂无阵容数据，运行 crawl_meta 生成 meta.json 后刷新。</p>
         </template>
       </template>
 
@@ -1928,6 +2108,102 @@ button.small {
 .comp-row {
   cursor: pointer;
   transition: background 0.12s;
+}
+
+.comp-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 12px;
+}
+
+.comp-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px;
+  cursor: pointer;
+  transition: background 0.12s, transform 0.1s;
+}
+
+.comp-card:hover {
+  background: var(--card-hover);
+  transform: translateY(-2px);
+}
+
+.comp-card-rank {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--dim);
+  min-width: 28px;
+}
+
+.comp-card-rank.top3 {
+  color: var(--gold);
+}
+
+.comp-card-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 8px;
+  background: #101018;
+}
+
+.comp-card-body {
+  min-width: 0;
+}
+
+.comp-card-name {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.comp-card-stats {
+  display: flex;
+  gap: 10px;
+  font-size: 12px;
+  margin-top: 3px;
+}
+
+.comp-card-stats .accent {
+  color: var(--gold-bright);
+}
+
+.comp-card-stats .green {
+  color: var(--green);
+}
+
+.cost-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+  gap: 8px;
+}
+
+.cost-group {
+  margin-bottom: 16px;
+}
+
+.cost-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--dim);
+  margin-bottom: 8px;
+}
+
+.cost-grid .champ-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 8px;
+  cursor: pointer;
+}
+
+.cost-grid .champ-head {
+  flex-direction: column;
+  gap: 6px;
+  text-align: center;
 }
 
 .comp-row:hover {

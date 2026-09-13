@@ -70,16 +70,7 @@ pub struct RankedStats {
     pub losses: i32,
 }
 
-impl RankedStats {
-    pub fn win_rate(&self) -> f64 {
-        let total = self.wins + self.losses;
-        if total == 0 {
-            0.0
-        } else {
-            self.wins as f64 / total as f64
-        }
-    }
-}
+
 
 /// 解析 LCU 排位响应中的 TFT 队列。
 fn parse_ranked(json: serde_json::Value) -> RankedStats {
