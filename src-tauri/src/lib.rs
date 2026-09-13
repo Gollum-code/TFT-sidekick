@@ -240,6 +240,13 @@ async fn get_meta(state: State<'_, AppState>) -> Result<MetaResult, String> {
             .unwrap_or(serde_json::json!([])),
     )
     .unwrap_or_default();
+    let named_comps: Vec<crate::models::NamedComp> = serde_json::from_value(
+        v.get("named_comps")
+            .cloned()
+            .unwrap_or(serde_json::json!([])),
+    )
+    .unwrap_or_default();
+
     let comp_details: Vec<crate::models::CompDetail> = serde_json::from_value(
         v.get("comp_details")
             .cloned()
@@ -255,6 +262,15 @@ async fn get_meta(state: State<'_, AppState>) -> Result<MetaResult, String> {
     )
     .unwrap_or_default();
 
+    let cost_win: Vec<f64> = serde_json::from_value(
+        v.get("cost_win").cloned().unwrap_or(serde_json::json!([])),
+    )
+    .unwrap_or_default();
+    let cost_top4: Vec<f64> = serde_json::from_value(
+        v.get("cost_top4").cloned().unwrap_or(serde_json::json!([])),
+    )
+    .unwrap_or_default();
+
     let sample_count = v
         .get("sample_count")
         .and_then(|x| x.as_u64())
@@ -262,11 +278,14 @@ async fn get_meta(state: State<'_, AppState>) -> Result<MetaResult, String> {
 
     Ok(MetaResult {
         comps,
+        named_comps,
         items,
         hero_items,
         comp_details,
         daily,
         counters,
+        cost_win,
+        cost_top4,
         sample_count,
         added_count: 0,
     })

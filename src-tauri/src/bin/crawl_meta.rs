@@ -144,7 +144,36 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         total_b.cmp(&total_a)
     });
 
-    // 3.5 阵容详情：按主羁绊分组的构成与统计
+    // 3.5 具名阵容（主羁绊 + 核心C位，类似 永森95）
+    let named_stats = tft_sidekick_lib::riot::aggregate_named_comps(&matches);
+    let named_comps: Vec<serde_json::Value> = named_stats
+        .into_iter()
+        .filter(|s| s.appearances >= 2)
+        .map(|s| {
+            let primary_name = sd
+                .trait_name(&s.primary)
+                .map(String::from)
+                .unwrap_or_else(|| s.primary.clone());
+            let carry_name = sd
+                .champion_name(&s.carry)
+                .map(String::from)
+                .unwrap_or_else(|| s.carry.clone());
+            serde_json::json!({
+                "id": s.key,
+                "name": format!("{primary_name} {carry_name}"),
+                "primary_name": primary_name,
+                "carry_name": carry_name,
+                "icon_url": sd.champion_icon(&s.carry).unwrap_or_default(),
+                "appearances": s.appearances,
+                "win_rate": s.wins as f64 / s.appearances as f64,
+                "top4_rate": s.top4 as f64 / s.appearances as f64,
+                "win_share": s.wins as f64 / total_matches,
+                "top4_share": s.top4 as f64 / (total_matches * 4.0),
+            })
+        })
+        .collect::<Vec<_>>();
+
+    // 3.6 阵容详情：按主羁绊分组的构成与统计
     let comp_details: Vec<CompDetail> =
         tft_sidekick_lib::riot::aggregate_comp_details(&matches, &sd);
 
@@ -186,6 +215,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .take(30)
         .collect();
 
+    // 3.8 费用分布（登顶/前四阵容中各费用占比）
+    let (win_cost, top4_cost) = tft_sidekick_lib::riot::aggregate_cost_distribution(&matches);
+
     // 4. 写文件
     eprintln!("[4/4] 写入 {} ...", out.display());
     let output = serde_json::json!({
@@ -194,11 +226,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         "region": "na1",
         "tiers": ["challenger", "grandmaster", "master"],
         "comps": comp_out,
+        "named_comps": named_comps,
         "items": item_out,
         "hero_items": hero_out,
         "comp_details": comp_details,
         "daily": daily_out,
         "counters": counters,
+        "cost_win": win_cost,
+        "cost_top4": top4_cost,
     });
     std::fs::write(&out, serde_json::to_string_pretty(&output)?)?;
     eprintln!("完成！已写入 {}", out.display());

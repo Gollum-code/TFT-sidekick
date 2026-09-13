@@ -232,13 +232,29 @@ interface CounterRow {
   a_win_rate: number;
 }
 
+interface NamedComp {
+  id: string;
+  name: string;
+  primary_name: string;
+  carry_name: string;
+  icon_url: string;
+  appearances: number;
+  win_rate: number;
+  top4_rate: number;
+  win_share: number;
+  top4_share: number;
+}
+
 interface MetaResult {
   comps: MetaComp[];
+  named_comps: NamedComp[];
   items: MetaItem[];
   hero_items: HeroItemRow[];
   comp_details: CompDetail[];
   daily: DailyRow[];
   counters: CounterRow[];
+  cost_win: number[];
+  cost_top4: number[];
   sample_count: number;
   added_count: number;
 }
@@ -433,6 +449,18 @@ const compCounters = computed(() => {
     .filter((c) => c.a_id === selectedComp.value!.id)
     .slice(0, 10);
 });
+
+// 内卷指数（辛普森集中度）与多样性指数
+const concentration = computed(() => {
+  if (!metaData.value || !metaData.value.named_comps.length) return 0;
+  const shares = metaData.value.named_comps.map((c) => c.win_share);
+  const sum = shares.reduce((a, b) => a + b, 0);
+  if (sum <= 0) return 0;
+  return shares.reduce((acc, s) => acc + (s / sum) * (s / sum), 0);
+});
+const diversity = computed(() => 1 - concentration.value);
+
+const costColors = ["#9aa4af", "#35c66b", "#3fa8f4", "#c26bf1", "#f5b23e"];
 const filteredAugments = computed(() =>
   augments.value.filter((a) => matchName(search.value)(a.name))
 );
@@ -497,6 +525,12 @@ function showCompDetail(compId: string) {
 
 function closeCompDetail() {
   selectedComp.value = null;
+}
+
+// 具名阵容 key = "主羁绊|C位" → 跳转到主羁绊的 comp_detail
+function showNamedComp(key: string) {
+  const primary = key.split("|")[0];
+  showCompDetail(primary);
 }
 
 async function getMeta() {
@@ -1283,30 +1317,68 @@ onMounted(async () => {
             </div>
           </template>
 
-          <!-- 阵容榜 -->
-          <div v-else-if="metaTab === 'comps' && metaData.comps.length > 0" class="meta-list">
-            <div class="meta-row meta-head">
-              <span class="meta-rank">#</span>
-              <span class="meta-name">阵容（主羁绊）</span>
-              <span class="meta-num">场次</span>
-              <span class="meta-num">登顶占比</span>
-              <span class="meta-num">前四占比</span>
+          <!-- 环境总览：指数 + 费用分布 + 具名阵容占比榜 -->
+          <div v-if="metaTab === 'comps'" class="env-overview">
+            <!-- 指数卡 -->
+            <div class="comp-stat-cards">
+              <div class="stat-card">
+                <div class="stat-value">{{ (concentration * 100).toFixed(1) }}</div>
+                <div class="stat-label">内卷指数</div>
+              </div>
+              <div class="stat-card">
+                <div class="stat-value">{{ (diversity * 100).toFixed(1) }}</div>
+                <div class="stat-label">多样性指数</div>
+              </div>
+              <div class="stat-card">
+                <div class="stat-value">{{ metaData.sample_count }}</div>
+                <div class="stat-label">样本对局</div>
+              </div>
             </div>
-            <div
-              v-for="(c, i) in metaData.comps"
-              :key="c.id"
-              class="meta-row comp-row"
-              @click="showCompDetail(c.id)"
-            >
-              <span class="meta-rank" :class="{ top3: i < 3 }">{{ i + 1 }}</span>
-              <span class="meta-name">
-                <img v-if="c.icon_url" :src="c.icon_url" :alt="c.name" class="top-icon" />
-                {{ c.name }}
-              </span>
-              <span class="meta-num">{{ c.appearances }}</span>
-              <span class="meta-num accent">{{ (c.win_share * 100).toFixed(2) }}%</span>
-              <span class="meta-num accent green">{{ (c.top4_share * 100).toFixed(2) }}%</span>
-            </div>
+
+            <!-- 费用分布 -->
+            <section class="board-section">
+              <h3>登顶费用分布</h3>
+              <div class="cost-bars">
+                <div v-for="(v, i) in metaData.cost_win" :key="'w' + i" class="cost-bar-row">
+                  <span class="cost-bar-label" :style="{ color: costColors[i] }">{{ i + 1 }}费</span>
+                  <div class="cost-bar-bg">
+                    <div class="cost-bar" :style="{ width: (v * 100) + '%', background: costColors[i] }"></div>
+                  </div>
+                  <span class="cost-bar-val">{{ (v * 100).toFixed(1) }}%</span>
+                </div>
+              </div>
+            </section>
+
+            <!-- 具名阵容登顶占比榜 -->
+            <section class="board-section">
+              <h3>登顶占比 · 阵容</h3>
+              <div v-if="metaData.named_comps.length" class="meta-list">
+                <div class="meta-row meta-head">
+                  <span class="meta-rank">#</span>
+                  <span class="meta-name">阵容</span>
+                  <span class="meta-num">场次</span>
+                  <span class="meta-num">登顶占比</span>
+                  <span class="meta-num">前四占比</span>
+                </div>
+                <div
+                  v-for="(c, i) in metaData.named_comps"
+                  :key="c.id"
+                  class="meta-row comp-row"
+                  @click="showNamedComp(c.id)"
+                >
+                  <span class="meta-rank" :class="{ top3: i < 3 }">{{ i + 1 }}</span>
+                  <span class="meta-name">
+                    <img v-if="c.icon_url" :src="c.icon_url" :alt="c.carry_name" class="top-icon" />
+                    {{ c.name }}
+                    <span class="comp-sub">{{ c.primary_name }} · {{ c.carry_name }}</span>
+                  </span>
+                  <span class="meta-num">{{ c.appearances }}</span>
+                  <span class="meta-num accent">{{ (c.win_share * 100).toFixed(2) }}%</span>
+                  <span class="meta-num accent green">{{ (c.top4_share * 100).toFixed(2) }}%</span>
+                </div>
+              </div>
+              <p v-else class="empty">暂无数据</p>
+            </section>
           </div>
 
           <!-- 装备榜 -->
@@ -2204,6 +2276,56 @@ button.small {
   flex-direction: column;
   gap: 6px;
   text-align: center;
+}
+
+.env-overview .comp-stat-cards {
+  margin-bottom: 24px;
+}
+
+.comp-sub {
+  font-size: 11px;
+  color: var(--faint);
+  margin-left: 6px;
+}
+
+.cost-bars {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  max-width: 480px;
+}
+
+.cost-bar-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.cost-bar-label {
+  width: 34px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.cost-bar-bg {
+  flex: 1;
+  height: 14px;
+  background: #26262c;
+  border-radius: 5px;
+  overflow: hidden;
+}
+
+.cost-bar {
+  height: 100%;
+  border-radius: 5px;
+  transition: width 0.3s;
+}
+
+.cost-bar-val {
+  min-width: 46px;
+  text-align: right;
+  font-size: 12px;
+  color: var(--dim);
 }
 
 .comp-row:hover {

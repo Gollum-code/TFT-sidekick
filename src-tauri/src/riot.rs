@@ -622,6 +622,113 @@ pub fn aggregate_counters(
     out
 }
 
+/// 费用分布：吃鸡/前四阵容中各费用（1~5费）弈子占比。
+/// rarity 0~4 对应 1~5 费。
+pub fn aggregate_cost_distribution(matches: &[RiotMatch]) -> (Vec<f64>, Vec<f64>) {
+    let mut win_counts = [0f64; 5];
+    let mut win_total = 0f64;
+    let mut top4_counts = [0f64; 5];
+    let mut top4_total = 0f64;
+
+    for m in matches {
+        for p in &m.participants {
+            for u in &p.units {
+                let cost = u.rarity.unwrap_or(0) as usize;
+                if cost >= 5 {
+                    continue;
+                }
+                if p.placement == 1 {
+                    win_counts[cost] += 1.0;
+                    win_total += 1.0;
+                    top4_counts[cost] += 1.0;
+                    top4_total += 1.0;
+                } else if p.placement <= 4 {
+                    top4_counts[cost] += 1.0;
+                    top4_total += 1.0;
+                }
+            }
+        }
+    }
+
+    let win = if win_total > 0.0 {
+        win_counts.iter().map(|c| c / win_total).collect()
+    } else {
+        vec![0.0; 5]
+    };
+    let top4 = if top4_total > 0.0 {
+        top4_counts.iter().map(|c| c / top4_total).collect()
+    } else {
+        vec![0.0; 5]
+    };
+    (win, top4)
+}
+
+/// 具名阵容聚合：主羁绊 + 核心C位（装备最多/费用最高的棋子）。
+#[derive(Debug, Clone)]
+pub struct NamedCompStat {
+    pub key: String,
+    pub primary: String,
+    pub carry: String,
+    pub appearances: u32,
+    pub wins: u32,
+    pub top4: u32,
+    pub sum_placement: f64,
+}
+
+/// 识别参与者的具名阵容：返回 (主羁绊id, 核心C位id)。
+/// C位 = 装备数优先，其次费用、星级。
+fn identify_named_comp(p: &ParticipantComp) -> Option<(String, String)> {
+    let primary = p
+        .traits
+        .iter()
+        .filter(|t| t.tier_current.unwrap_or(0) > 0)
+        .max_by_key(|t| t.tier_total.unwrap_or(0))
+        .map(|t| t.trait_id.clone())?;
+    let carry = p
+        .units
+        .iter()
+        .max_by(|a, b| {
+            let score = |u: &crate::models::MatchUnit| {
+                u.items.len() as i32 * 10 + u.rarity.unwrap_or(0) * 3 + u.tier.unwrap_or(0)
+            };
+            score(a).cmp(&score(b))
+        })
+        .map(|u| u.character_id.clone())?;
+    Some((primary, carry))
+}
+
+/// 具名阵容聚合：按 (主羁绊, C位) 分组。
+pub fn aggregate_named_comps(matches: &[RiotMatch]) -> Vec<NamedCompStat> {
+    let mut map: HashMap<(String, String), NamedCompStat> = HashMap::new();
+    for m in matches {
+        for p in &m.participants {
+            let Some((primary, carry)) = identify_named_comp(p) else {
+                continue;
+            };
+            let e = map.entry((primary.clone(), carry.clone())).or_insert(NamedCompStat {
+                key: format!("{primary}|{carry}"),
+                primary,
+                carry,
+                appearances: 0,
+                wins: 0,
+                top4: 0,
+                sum_placement: 0.0,
+            });
+            e.appearances += 1;
+            if p.placement == 1 {
+                e.wins += 1;
+            }
+            if p.placement <= 4 {
+                e.top4 += 1;
+            }
+            e.sum_placement += p.placement as f64;
+        }
+    }
+    let mut out: Vec<NamedCompStat> = map.into_values().collect();
+    out.sort_by(|a, b| b.appearances.cmp(&a.appearances));
+    out
+}
+
 /// 按「主羁绊」聚合胜率/前四率（按出现次数降序，仅保留样本足够的）。
 pub fn aggregate_comps(matches: &[RiotMatch]) -> Vec<CompStat> {
     let mut map: HashMap<String, CompStat> = HashMap::new();

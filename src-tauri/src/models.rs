@@ -218,6 +218,21 @@ pub struct CounterRow {
     pub a_win_rate: f64,
 }
 
+/// 具名阵容：主羁绊 + 核心C位，对应 TFTable 的具体阵容（如永森95）。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NamedComp {
+    pub id: String,
+    pub name: String,
+    pub primary_name: String,
+    pub carry_name: String,
+    pub icon_url: String,
+    pub appearances: u32,
+    pub win_rate: f64,
+    pub top4_rate: f64,
+    pub win_share: f64,
+    pub top4_share: f64,
+}
+
 /// 阵容含金币均值（用于今日/趋势聚合）。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DailyRow {
@@ -302,11 +317,14 @@ pub struct CompTraitRow {
 #[derive(Debug, Clone, Serialize)]
 pub struct MetaResult {
     pub comps: Vec<MetaComp>,
+    pub named_comps: Vec<NamedComp>,
     pub items: Vec<MetaItem>,
     pub hero_items: Vec<HeroItemRow>,
     pub comp_details: Vec<CompDetail>,
     pub daily: Vec<DailyRow>,
     pub counters: Vec<CounterRow>,
+    pub cost_win: Vec<f64>,
+    pub cost_top4: Vec<f64>,
     pub sample_count: u32,
     pub added_count: u32,
 }
