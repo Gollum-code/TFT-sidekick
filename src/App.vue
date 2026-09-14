@@ -372,9 +372,14 @@ function matchName(q: string) {
   return (name: string) => !q || name.toLowerCase().includes(q.toLowerCase());
 }
 
-const filteredItems = computed(() =>
-  craftable.value.filter((i) => matchName(search.value)(i.name))
-);
+const filteredItems = computed(() => {
+  let list = craftable.value.filter((i) => matchName(search.value)(i.name));
+  if (itemFilter.value !== "all") {
+    const needle = itemFilter.value === "artifact" ? "Artifact" : "Emblem";
+    list = list.filter((i) => i.id.toLowerCase().includes(needle.toLowerCase()));
+  }
+  return list;
+});
 const filteredChampions = computed(() =>
   champions.value.filter(
     (c) =>
@@ -486,6 +491,9 @@ const trendLines = computed(() => {
 const filteredAugments = computed(() =>
   augments.value.filter((a) => matchName(search.value)(a.name))
 );
+
+// 装备筛选：全部 / 神器 / 纹章
+const itemFilter = ref<"all" | "artifact" | "emblem">("all");
 
 // 从赛季总览点击跳到对应 tab 并搜索
 function openDataTo(tab: "champions" | "traits" | "items", query: string) {
@@ -958,6 +966,11 @@ onMounted(async () => {
 
         <!-- 装备合成 -->
         <template v-else-if="dataTab === 'items'">
+          <div class="tabs" style="margin-bottom: 14px">
+            <button class="tab" :class="{ active: itemFilter === 'all' }" @click="itemFilter = 'all'">全部</button>
+            <button class="tab" :class="{ active: itemFilter === 'artifact' }" @click="itemFilter = 'artifact'">神器</button>
+            <button class="tab" :class="{ active: itemFilter === 'emblem' }" @click="itemFilter = 'emblem'">纹章</button>
+          </div>
           <section class="board-section">
             <h3>散件</h3>
             <div class="component-list">
