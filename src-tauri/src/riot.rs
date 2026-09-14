@@ -297,6 +297,7 @@ pub struct HeroItemStat {
     pub appearances: u32,
     pub wins: u32,
     pub top4: u32,
+    pub sum_placement: f64,
 }
 
 /// 按 (英雄, 装备) 聚合：某英雄身上某装备的出现/吃鸡/前四。

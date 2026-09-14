@@ -461,6 +461,28 @@ const concentration = computed(() => {
 const diversity = computed(() => 1 - concentration.value);
 
 const costColors = ["#9aa4af", "#35c66b", "#3fa8f4", "#c26bf1", "#f5b23e"];
+
+// 阵容趋势图数据整合
+const trendColors = ["#f0c24b", "#4d9de0", "#45d483", "#c26bf1", "#f0716f"];
+const trendDates = computed(() => metaData.value?.daily.map((d) => d.date) ?? []);
+const trendTopNames = computed(() => {
+  if (!metaData.value) return [];
+  const names: string[] = [];
+  for (const d of metaData.value.daily) {
+    for (const c of d.comps.slice(0, 5)) {
+      if (!names.includes(c.name)) names.push(c.name);
+    }
+    if (names.length >= 5) break;
+  }
+  return names.slice(0, 5);
+});
+// 每个 Top 阵容在每天的 win_share 折线（缺的天补 0）
+const trendLines = computed(() => {
+  if (!metaData.value) return [];
+  return trendTopNames.value.map((name) =>
+    metaData.value!.daily.map((d) => d.comps.find((c) => c.name === name)?.win_share ?? 0)
+  );
+});
 const filteredAugments = computed(() =>
   augments.value.filter((a) => matchName(search.value)(a.name))
 );
@@ -1349,6 +1371,19 @@ onMounted(async () => {
               </div>
             </section>
 
+            <section class="board-section">
+              <h3>前四费用分布</h3>
+              <div class="cost-bars">
+                <div v-for="(v, i) in metaData.cost_top4" :key="'t' + i" class="cost-bar-row">
+                  <span class="cost-bar-label" :style="{ color: costColors[i] }">{{ i + 1 }}费</span>
+                  <div class="cost-bar-bg">
+                    <div class="cost-bar" :style="{ width: (v * 100) + '%', background: costColors[i] }"></div>
+                  </div>
+                  <span class="cost-bar-val">{{ (v * 100).toFixed(1) }}%</span>
+                </div>
+              </div>
+            </section>
+
             <!-- 具名阵容登顶占比榜 -->
             <section class="board-section">
               <h3>登顶占比 · 阵容</h3>
@@ -1455,19 +1490,25 @@ onMounted(async () => {
           <div v-else-if="metaTab === 'daily' && !metaLoading" class="empty">暂无每日数据。</div>
 
           <!-- 阵容趋势：跨日占比变化 -->
-          <div v-if="metaTab === 'trend' && metaData.daily.length > 0" class="trend-list">
-            <div v-for="d in metaData.daily" :key="d.date" class="trend-card">
-              <div class="champ-name">{{ d.date }}</div>
-              <div class="trend-bars">
-                <div v-for="c in d.comps.slice(0, 5)" :key="c.id" class="trend-row">
-                  <span class="trend-name">{{ c.name }}</span>
-                  <div class="trend-bar-bg">
-                    <div class="trend-bar" :style="{ width: Math.min(100, c.win_share * 400) + '%' }"></div>
-                  </div>
-                  <span class="trend-val">{{ (c.win_share * 100).toFixed(1) }}%</span>
-                </div>
-              </div>
+          <div v-if="metaTab === 'trend' && metaData.daily.length > 0" class="trend-chart-wrap">
+            <div class="trend-legend">
+              <span v-for="(name, i) in trendTopNames" :key="i" class="trend-legend-item">
+                <span class="trend-legend-dot" :style="{ background: trendColors[i % trendColors.length] }"></span>
+                {{ name }}
+              </span>
             </div>
+            <svg class="trend-svg" :viewBox="'0 0 ' + trendDates.length * 80 + ' 200'" preserveAspectRatio="xMidYMid meet">
+              <line v-for="n in 5" :key="'g'+n" :x1="0" :y1="n*40" :x2="trendDates.length*80" :y2="n*40" stroke="#2a2a3a" stroke-width="0.5"/>
+              <text v-for="(name, i) in trendTopNames" :key="'l'+i" x="4" :y="205" fill="#888" font-size="11">{{ name.slice(0, 4) }}</text>
+              <g v-for="(line, i) in trendLines" :key="i">
+                <polyline
+                  :points="line.map((v, j) => j * 80 + ',' + (200 - v * 400)).join(' ')"
+                  :stroke="trendColors[i % trendColors.length]"
+                  stroke-width="2"
+                  fill="none"
+                />
+              </g>
+            </svg>
           </div>
           <div v-else-if="metaTab === 'trend' && !metaLoading" class="empty">暂无趋势数据。</div>
         </template>
@@ -2286,6 +2327,36 @@ button.small {
   font-size: 11px;
   color: var(--faint);
   margin-left: 6px;
+}
+
+.trend-chart-wrap {
+  margin-bottom: 24px;
+}
+
+.trend-legend {
+  display: flex;
+  gap: 14px;
+  margin-bottom: 10px;
+  flex-wrap: wrap;
+}
+
+.trend-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  color: var(--dim);
+}
+
+.trend-legend-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+
+.trend-svg {
+  width: 100%;
+  max-height: 220px;
 }
 
 .cost-bars {
