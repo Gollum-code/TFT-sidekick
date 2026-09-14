@@ -573,7 +573,6 @@ const selectedComp = ref<CompDetail | null>(null);
 function showCompDetail(compId: string) {
   selectedComp.value = metaData.value?.comp_details.find((d) => d.id === compId) ?? null;
   if (!selectedComp.value) {
-    // 数据里没有详情时，用 comps 条目的简单信息兜底
     const c = metaData.value?.comps.find((x) => x.id === compId);
     if (c) {
       selectedComp.value = {
@@ -589,6 +588,7 @@ function showCompDetail(compId: string) {
       };
     }
   }
+  view.value = "comps";
 }
 
 function closeCompDetail() {
@@ -624,10 +624,10 @@ const navGroups: {
 }[] = [
   { key: "matches", label: "战绩", icon: "◉" },
   { key: "stats", label: "统计", icon: "▤" },
-  { key: "comps", label: "阵容", icon: "♜" },
+  { key: "comps", label: "推荐阵容", icon: "♜" },
   {
     key: "data",
-    label: "数据表",
+      label: "机制手册",
     icon: "▦",
     children: [
       { label: "装备合成", go: () => (dataTab.value = "items") },
@@ -1198,106 +1198,69 @@ onMounted(async () => {
         </template>
       </template>
 
-      <!-- 阵容列表（Comp List） -->
+      <!-- 推荐阵容列表（直接展示完整构成） -->
       <template v-else-if="view === 'comps'">
         <header class="topbar">
-          <h2>阵容列表</h2>
+          <h2>推荐阵容</h2>
           <button @click="getMeta" :disabled="metaLoading">
             {{ metaLoading ? "加载中…" : "刷新" }}
           </button>
         </header>
-        <div class="odds-note">高分段常用阵容（来源：国际服王者/宗师/大师对局）。点击查看详情。</div>
+        <div class="odds-note">高分段常用阵容（来源：国际服王者/宗师/大师对局）。</div>
 
-        <div v-if="selectedComp">
-          <!-- 复用阵容详情 -->
-          <div class="comp-detail">
-            <header class="topbar">
-              <button class="ghost" @click="closeCompDetail">← 返回</button>
-              <h2 class="detail-title">
-                <img v-if="selectedComp.icon_url" :src="selectedComp.icon_url" :alt="selectedComp.name" class="top-icon" />
-                {{ selectedComp.name }}
-              </h2>
-              <span class="muted">{{ selectedComp.appearances }} 局</span>
+        <div v-if="metaData && metaData.comp_details.length" class="recommend-list">
+          <div
+            v-for="cd in metaData.comp_details.slice(0, 20)"
+            :key="cd.id"
+            class="recommend-card"
+          >
+            <header class="topbar recommend-head">
+              <h3 class="detail-title">
+                <img v-if="cd.icon_url" :src="cd.icon_url" :alt="cd.name" class="top-icon" />
+                {{ cd.name }}
+              </h3>
+              <span class="muted">{{ cd.appearances }} 局</span>
+              <span class="meta-num accent">{{ (cd.win_rate * 100).toFixed(1) }}%</span>
+              <span class="meta-num accent green">{{ (cd.top4_rate * 100).toFixed(1) }}%</span>
+              <span class="muted">均 {{ cd.avg_placement.toFixed(2) }}</span>
             </header>
-            <div class="comp-stat-cards">
-              <div class="stat-card"><div class="stat-value">{{ (selectedComp.win_rate * 100).toFixed(1) }}%</div><div class="stat-label">吃鸡率</div></div>
-              <div class="stat-card"><div class="stat-value">{{ (selectedComp.top4_rate * 100).toFixed(1) }}%</div><div class="stat-label">前四率</div></div>
-              <div class="stat-card"><div class="stat-value">{{ selectedComp.avg_placement.toFixed(2) }}</div><div class="stat-label">平均名次</div></div>
+
+            <!-- 羁绊（上） -->
+            <div class="recommend-traits">
+              <span v-for="t in cd.traits.slice(0, 6)" :key="t.id" class="trait-chip">
+                {{ t.name || t.id }}
+              </span>
             </div>
-            <section class="board-section">
-              <h3>阵容构成</h3>
-              <div class="board">
-                <div v-for="u in selectedComp.units" :key="u.id" class="unit-card" :style="{ opacity: 0.35 + u.rate }">
-                  <div class="unit-icon-wrap">
-                    <img v-if="u.icon_url" :src="u.icon_url" :alt="u.name" class="unit-icon" />
-                    <div v-if="u.avg_tier" class="stars">{{ "★".repeat(Math.max(1, Math.round(u.avg_tier))) }}</div>
-                  </div>
-                  <div class="unit-name">{{ u.name || u.id }}</div>
-                  <div class="unit-sub">{{ (u.rate * 100).toFixed(0) }}% · {{ u.count }} 局</div>
-                  <div class="unit-items">
-                    <div v-for="it in u.items.slice(0, 3)" :key="it.id" class="item" :title="it.name">
-                      <img v-if="it.icon_url" :src="it.icon_url" :alt="it.name" />
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </section>
-            <section class="board-section">
-              <h3>常见羁绊</h3>
-              <div class="traits">
-                <div v-for="t in selectedComp.traits" :key="t.id" class="trait">
-                  <span class="trait-name">{{ t.name || t.id }}</span>
-                  <span class="trait-tier">{{ t.count }} 局</span>
-                </div>
-              </div>
-            </section>
-            <section class="board-section">
-              <h3>互害 / 受益</h3>
-              <div v-if="compCounters.length > 0" class="counter-list">
-                <div class="meta-row meta-head">
-                  <span class="meta-name">对阵阵容</span>
-                  <span class="meta-num">同场局</span>
-                  <span class="meta-num">本阵容均名次</span>
-                  <span class="meta-num">吃鸡率</span>
-                </div>
-                <div v-for="c in compCounters" :key="c.b_id" class="meta-row">
-                  <span class="meta-name">
-                    <span class="counter-name">{{ c.b_name }}</span>
-                    <span class="counter-delta" :class="{ bad: c.a_avg_placement >= 4.5 }">
-                      {{ Math.round(c.a_avg_placement) >= 5 ? "克制" : (c.a_avg_placement <= 3.5 ? "被克" : "") }}
-                    </span>
+
+            <!-- 弈子 + 装备贴图（下） -->
+            <div class="recommend-units">
+              <div
+                v-for="u in cd.units"
+                :key="u.id"
+                class="recommend-unit"
+                :title="u.name"
+              >
+                <div class="recommend-unit-icon">
+                  <img v-if="u.icon_url" :src="u.icon_url" :alt="u.name" />
+                  <span v-if="u.avg_tier" class="recommend-star">
+                    {{ "★".repeat(Math.max(1, Math.round(u.avg_tier))) }}
                   </span>
-                  <span class="meta-num">{{ c.appearances }}</span>
-                  <span class="meta-num">{{ c.a_avg_placement.toFixed(2) }}</span>
-                  <span class="meta-num accent">{{ (c.a_win_rate * 100).toFixed(0) }}%</span>
                 </div>
+                <div class="recommend-unit-items">
+                  <img
+                    v-for="it in u.items.slice(0, 3)"
+                    :key="it.id"
+                    :src="it.icon_url"
+                    :alt="it.name"
+                    class="recommend-item"
+                  />
+                </div>
+                <div class="recommend-unit-name">{{ u.name || u.id }}</div>
               </div>
-              <p v-else class="empty" style="padding: 12px 0; text-align: left">样本不足，暂未统计互害数据。</p>
-            </section>
+            </div>
           </div>
         </div>
-
-        <template v-else>
-          <div v-if="metaData && metaData.comps.length" class="comp-grid">
-            <div
-              v-for="(c, i) in metaData.comps"
-              :key="c.id"
-              class="comp-card"
-              @click="showCompDetail(c.id)"
-            >
-              <div class="comp-card-rank" :class="{ top3: i < 3 }">#{{ i + 1 }}</div>
-              <img v-if="c.icon_url" :src="c.icon_url" :alt="c.name" class="comp-card-icon" />
-              <div class="comp-card-body">
-                <div class="comp-card-name">{{ c.name }}</div>
-                <div class="comp-card-stats">
-                  <span class="accent">登顶 {{ (c.win_share * 100).toFixed(2) }}%</span>
-                  <span class="green">前四 {{ (c.top4_share * 100).toFixed(2) }}%</span>
-                </div>
-              </div>
-            </div>
-          </div>
-          <p v-else class="empty">暂无阵容数据，运行 crawl_meta 生成 meta.json 后刷新。</p>
-        </template>
+        <p v-else class="empty">暂无阵容数据，运行 crawl_meta 生成 meta.json 后刷新。</p>
       </template>
 
       <!-- Meta 视图 -->
@@ -3305,5 +3268,104 @@ button.small {
 
 .hero-item-row .meta-num {
   min-width: 40px;
+}
+
+/* 推荐阵容 */
+.recommend-list {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.recommend-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px;
+}
+
+.recommend-head {
+  margin-bottom: 12px;
+  font-size: 16px;
+}
+
+.recommend-traits {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 14px;
+}
+
+.trait-chip {
+  background: rgba(69, 212, 131, 0.12);
+  color: var(--green);
+  border: 1px solid rgba(69, 212, 131, 0.25);
+  padding: 3px 9px;
+  border-radius: 6px;
+  font-size: 12px;
+}
+
+.recommend-units {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.recommend-unit {
+  width: 72px;
+  text-align: center;
+}
+
+.recommend-unit-icon {
+  position: relative;
+  width: 58px;
+  height: 58px;
+  margin: 0 auto;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #101018;
+  border: 1px solid var(--border);
+}
+
+.recommend-unit-icon img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.recommend-star {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  font-size: 9px;
+  color: var(--gold);
+  background: rgba(0, 0, 0, 0.7);
+  line-height: 1.5;
+  text-shadow: 0 0 4px rgba(240, 194, 75, 0.6);
+}
+
+.recommend-unit-items {
+  display: flex;
+  justify-content: center;
+  gap: 3px;
+  margin: 4px 0 2px;
+  min-height: 18px;
+}
+
+.recommend-item {
+  width: 18px;
+  height: 18px;
+  border-radius: 3px;
+  background: #101018;
+}
+
+.recommend-unit-name {
+  font-size: 11px;
+  color: var(--dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 </style>
