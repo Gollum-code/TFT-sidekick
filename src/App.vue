@@ -349,7 +349,7 @@ async function openStats() {
 }
 
 const dataTab = ref<
-  "overview" | "champions" | "traits" | "items" | "augments" | "wisps" | "odds" | "rules"
+  "overview" | "champions" | "traits" | "items" | "augments" | "wisps" | "loot" | "gold" | "reroll" | "odds" | "rules"
 >("overview");
 const dataLoading = ref(false);
 const items = ref<ItemData[]>([]);
@@ -358,6 +358,44 @@ const traits = ref<TraitData[]>([]);
 const augments = ref<ItemData[]>([]);
 const shopOdds = ref<ShopOddsLevel[]>([]);
 const gameRules = ref<RulesSection[]>([]);
+const lootTables: { title: string; rows: string[][] }[] = [
+  {
+    title: "常见战利品球（按回合）",
+    rows: [
+      ["回合", "掉落"],
+      ["1-1 ~ 1-3", "起始基础战利品球（金币/散件）"],
+      ["2-1 / 2-5", "野怪回合掉落（金币、散件）"],
+      ["3-1 / 3-5", "野怪回合更高价值（完整装、散件、金币）"],
+      ["4-1 ~ 4-7", "高价值合成装 / 纹章 / 金币"],
+      ["5-1+", "取决于野怪，可能含强装 / 神器"],
+    ],
+  },
+];
+const goldTables: { title: string; rows: string[][] }[] = [
+  {
+    title: "金币 / 利息规则",
+    rows: [
+      ["项目", "说明"],
+      ["基础回合收入", "每回合自动 +5 金币"],
+      ["利息", "每存 10 金币回合结束 +1（上限 +5，存 50 封顶）"],
+      ["连胜/连败", "2 连胜 +1，4 连胜及以上 +2"],
+      ["胜利奖励", "胜利方每回合 +1 金币"],
+      ["野怪回合", "野怪回合结束免费刷新一次"],
+    ],
+  },
+];
+const rerollTables: { title: string; rows: string[][] }[] = [
+  {
+    title: "商店刷新规则",
+    rows: [
+      ["项目", "说明"],
+      ["刷新费用", "每次刷新商店 2 金币"],
+      ["免费刷新", "胜利后获得 1 次免费刷新（不可叠加）"],
+      ["野怪回合", "野怪回合结束免费刷新一次"],
+      ["商店英雄数", "标准回合 5 个英雄"],
+    ],
+  },
+];
 const search = ref("");
 
 const itemMap = computed(() => {
@@ -906,6 +944,9 @@ onMounted(async () => {
       { key: 'items', label: '装备合成' },
       { key: 'augments', label: '海克斯' },
       { key: 'wisps', label: '小精灵' },
+      { key: 'loot', label: '掉落球' },
+      { key: 'gold', label: '金币利息' },
+      { key: 'reroll', label: '刷新订阅' },
       { key: 'odds', label: '商店概率' },
       { key: 'rules', label: '机制' },
             ]"
@@ -1069,6 +1110,51 @@ onMounted(async () => {
             </div>
           </div>
           <p v-if="filteredAugments.length === 0" class="empty">没有匹配的海克斯</p>
+        </template>
+
+        <!-- 掉落球 -->
+        <template v-else-if="dataTab === 'loot'">
+          <div class="odds-note">按回合掉落的战利品球内容（各版本可能微调）。</div>
+          <div v-for="sec in lootTables" :key="sec.title" class="rule-section">
+            <h3>{{ sec.title }}</h3>
+            <table class="odds-table">
+              <tbody>
+                <tr v-for="(row, ri) in sec.rows" :key="ri">
+                  <td v-for="(cell, ci) in row" :key="ci" :class="{ 'rule-key': ci === 0 }">{{ cell }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </template>
+
+        <!-- 金币利息 -->
+        <template v-else-if="dataTab === 'gold'">
+          <div class="odds-note">金币获取 / 利息规则（各版本可能微调）。</div>
+          <div v-for="sec in goldTables" :key="sec.title" class="rule-section">
+            <h3>{{ sec.title }}</h3>
+            <table class="odds-table">
+              <tbody>
+                <tr v-for="(row, ri) in sec.rows" :key="ri">
+                  <td v-for="(cell, ci) in row" :key="ci" :class="{ 'rule-key': ci === 0 }">{{ cell }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </template>
+
+        <!-- 刷新订阅 -->
+        <template v-else-if="dataTab === 'reroll'">
+          <div class="odds-note">商店刷新机制（各版本可能微调）。</div>
+          <div v-for="sec in rerollTables" :key="sec.title" class="rule-section">
+            <h3>{{ sec.title }}</h3>
+            <table class="odds-table">
+              <tbody>
+                <tr v-for="(row, ri) in sec.rows" :key="ri">
+                  <td v-for="(cell, ci) in row" :key="ci" :class="{ 'rule-key': ci === 0 }">{{ cell }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
         </template>
 
         <!-- 商店概率 -->
