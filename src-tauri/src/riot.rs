@@ -315,6 +315,7 @@ pub fn aggregate_unit_items(matches: &[RiotMatch]) -> Vec<HeroItemStat> {
                         appearances: 0,
                         wins: 0,
                         top4: 0,
+                        sum_placement: 0.0,
                     });
                     e.appearances += 1;
                     if p.placement == 1 {
@@ -323,6 +324,7 @@ pub fn aggregate_unit_items(matches: &[RiotMatch]) -> Vec<HeroItemStat> {
                     if p.placement <= 4 {
                         e.top4 += 1;
                     }
+                    e.sum_placement += p.placement as f64;
                 }
             }
         }
