@@ -211,7 +211,24 @@ fn get_game_rules() -> Vec<RulesSection> {
     ]
 }
 
-/// 读取项目里的 meta.json（提前由 crawl_meta 工具生成）。
+/// 读取 tftable_data.json（网站元数据快照）。
+#[tauri::command]
+fn get_tftable_data(state: State<'_, AppState>) -> Result<serde_json::Value, String> {
+    const EMBEDDED: &str = include_str!("../../tftable_data.json");
+    let path = state
+        .meta_json_path
+        .parent()
+        .unwrap()
+        .join("tftable_data.json");
+    let raw = if path.exists() {
+        std::fs::read_to_string(&path).map_err(|e| e.to_string())?
+    } else {
+        EMBEDDED.to_string()
+    };
+    serde_json::from_str(&raw).map_err(|e| format!("tftable_data.json 格式错误: {e}"))
+}
+
+/// 项目里的 meta.json（旧数据，保留兼容）。
 #[tauri::command]
 async fn get_meta(state: State<'_, AppState>) -> Result<MetaResult, String> {
     let path = &state.meta_json_path;
@@ -573,6 +590,7 @@ pub fn run() {
             get_shop_odds,
             get_game_rules,
             get_meta,
+            get_tftable_data,
             get_profile
         ])
         .run(tauri::generate_context!())

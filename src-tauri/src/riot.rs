@@ -58,8 +58,8 @@ impl RiotClient {
         let wait = {
             let last = self.last_request.lock().unwrap();
             let elapsed = last.elapsed();
-            if elapsed < Duration::from_millis(1100) {
-                Some(Duration::from_millis(1100) - elapsed)
+        if elapsed < Duration::from_millis(1600) {
+            Some(Duration::from_millis(1600) - elapsed)
             } else {
                 None
             }
@@ -216,9 +216,9 @@ pub async fn crawl_matches(
     let mut seen = std::collections::HashSet::new();
     'outer: for tier in ["challenger", "grandmaster", "master"] {
         let puuids = client.leaderboard(tier).await?;
-        for puuid in puuids.iter().take(15) {
-            let ids = client.match_ids(puuid, 8).await?;
-            for id in ids.into_iter().take(4) {
+        for puuid in puuids.iter().take(8) {
+            let ids = client.match_ids(puuid, 10).await?;
+            for id in ids.into_iter().take(6) {
                 if !seen.insert(id.clone()) {
                     continue;
                 }
@@ -338,7 +338,8 @@ pub fn aggregate_unit_items(matches: &[RiotMatch]) -> Vec<HeroItemStat> {
     out
 }
 
-/// 按「主羁绊」聚合，输出阵容构成详情（核心棋子、装备、羁绊）。
+/// 按「具名阵容（主羁绊+核心C位）」聚合，输出成型阵容构成。
+/// 核心弈子 = 该阵容出现局中出现率较高的弈子（自然成 6~9 个），不堆砌。
 pub fn aggregate_comp_details(
     matches: &[RiotMatch],
     sd: &StaticData,
@@ -360,18 +361,16 @@ pub fn aggregate_comp_details(
     }
 
     let mut comp_agg: HashMap<String, CompAgg> = HashMap::new();
+    let mut meta: HashMap<String, (String, String)> = HashMap::new();
+
     for m in matches {
         for p in &m.participants {
-            let primary = p
-                .traits
-                .iter()
-                .filter(|t| t.tier_current.unwrap_or(0) > 0)
-                .max_by_key(|t| t.tier_total.unwrap_or(0))
-                .map(|t| t.trait_id.clone());
-            let Some(pkey) = primary else {
+            let Some((primary, carry)) = identify_named_comp(p) else {
                 continue;
             };
-            let agg = comp_agg.entry(pkey.clone()).or_default();
+            let key = format!("{primary}|{carry}");
+            meta.entry(key.clone()).or_insert((primary, carry));
+            let agg = comp_agg.entry(key).or_default();
             agg.appearances += 1;
             if p.placement == 1 {
                 agg.wins += 1;
@@ -398,12 +397,12 @@ pub fn aggregate_comp_details(
 
     let mut out: Vec<crate::models::CompDetail> = comp_agg
         .iter()
-        .map(|(pkey, agg)| {
+        .map(|(key, agg)| {
             let mut units: Vec<crate::models::CompUnit> = agg
                 .units
                 .iter()
                 .map(|(id, ua)| {
-                    let top_items = ua
+                    let mut top_items: Vec<crate::models::HeroItem> = ua
                         .items
                         .iter()
                         .map(|(iid, cnt)| crate::models::HeroItem {
@@ -418,6 +417,8 @@ pub fn aggregate_comp_details(
                             top4_rate: 0.0,
                         })
                         .collect();
+                    top_items.sort_by(|a, b| b.appearances.cmp(&a.appearances));
+                    top_items.truncate(3);
                     crate::models::CompUnit {
                         id: id.clone(),
                         name: sd
@@ -440,7 +441,9 @@ pub fn aggregate_comp_details(
                     }
                 })
                 .collect();
-            units.sort_by(|a, b| b.count.cmp(&a.count));
+            // 只保留该阵容大多数局都带的核心弈子（出现率>=0.35）
+            units.retain(|u| u.rate >= 0.35);
+            units.sort_by(|a, b| b.rate.partial_cmp(&a.rate).unwrap_or(std::cmp::Ordering::Equal));
 
             let mut traits: Vec<crate::models::CompTraitRow> = agg
                 .traits
@@ -456,13 +459,20 @@ pub fn aggregate_comp_details(
                 .collect();
             traits.sort_by(|a, b| b.count.cmp(&a.count));
 
+            let (primary, carry) = meta.get(key).cloned().unwrap_or_default();
+            let primary_name = sd
+                .trait_name(&primary)
+                .map(String::from)
+                .unwrap_or_else(|| primary.clone());
+            let carry_name = sd
+                .champion_name(&carry)
+                .map(String::from)
+                .unwrap_or_else(|| carry.clone());
+
             crate::models::CompDetail {
-                id: pkey.clone(),
-                name: sd
-                    .trait_name(pkey)
-                    .map(String::from)
-                    .unwrap_or_else(|| pkey.clone()),
-                icon_url: sd.trait_icon(pkey).unwrap_or_default(),
+                id: key.clone(),
+                name: format!("{primary_name} {carry_name}"),
+                icon_url: sd.champion_icon(&carry).unwrap_or_default(),
                 appearances: agg.appearances,
                 win_rate: if agg.appearances > 0 {
                     agg.wins as f64 / agg.appearances as f64

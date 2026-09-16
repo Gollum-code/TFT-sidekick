@@ -132,70 +132,6 @@ interface ShopOddsLevel {
   odds: number[];
 }
 
-interface MetaComp {
-  id: string;
-  name: string;
-  icon_url: string;
-  appearances: number;
-  win_rate: number;
-  top4_rate: number;
-  win_share: number;
-  top4_share: number;
-}
-
-interface MetaItem {
-  id: string;
-  name: string;
-  icon_url: string;
-  appearances: number;
-  win_rate: number;
-  top4_rate: number;
-}
-
-interface HeroItem {
-  id: string;
-  name: string;
-  icon_url: string;
-  appearances: number;
-  win_rate: number;
-  top4_rate: number;
-}
-
-interface HeroItemRow {
-  id: string;
-  name: string;
-  icon_url: string;
-  items: HeroItem[];
-}
-
-interface CompDetail {
-  id: string;
-  name: string;
-  icon_url: string;
-  appearances: number;
-  win_rate: number;
-  top4_rate: number;
-  avg_placement: number;
-  units: CompUnit[];
-  traits: CompTraitRow[];
-}
-
-interface CompUnit {
-  id: string;
-  name: string;
-  icon_url: string;
-  count: number;
-  rate: number;
-  avg_tier: number;
-  items: HeroItem[];
-}
-
-interface CompTraitRow {
-  id: string;
-  name: string;
-  count: number;
-}
-
 interface Profile {
   rank_tier: string;
   rank_division: string;
@@ -208,60 +144,293 @@ interface Profile {
   total: number;
 }
 
-interface DailyComp {
-  id: string;
-  name: string;
-  icon_url: string;
-  appearances: number;
-  win_share: number;
-  top4_share: number;
-}
-
-interface DailyRow {
-  date: string;
-  comps: DailyComp[];
-}
-
-interface CounterRow {
-  a_id: string;
-  a_name: string;
-  b_id: string;
-  b_name: string;
-  appearances: number;
-  a_avg_placement: number;
-  a_win_rate: number;
-}
-
-interface NamedComp {
-  id: string;
-  name: string;
-  primary_name: string;
-  carry_name: string;
-  icon_url: string;
-  appearances: number;
-  win_rate: number;
-  top4_rate: number;
-  win_share: number;
-  top4_share: number;
-}
-
-interface MetaResult {
-  comps: MetaComp[];
-  named_comps: NamedComp[];
-  items: MetaItem[];
-  hero_items: HeroItemRow[];
-  comp_details: CompDetail[];
-  daily: DailyRow[];
-  counters: CounterRow[];
-  cost_win: number[];
-  cost_top4: number[];
-  sample_count: number;
-  added_count: number;
-}
-
 interface RulesSection {
   title: string;
   rows: string[][];
+}
+
+// ===== TFTable 数据（tftable_data.json） =====
+
+interface TFTraitShare {
+  trait_id: string;
+  trait_name_cn: string;
+  trait_name_en: string;
+  tier: number | null;
+  units_required: number | null;
+  wins: number;
+}
+
+interface TFCompShare {
+  slug: string;
+  wins: number;
+}
+
+interface TFMetaStats {
+  metadata: { patch: string; ranked_tiers: string[]; total_sample_size: number; timestamp: string };
+  winShare: { sample_size: number; compositions: TFCompShare[]; traits: TFTraitShare[] };
+  top4Share: { sample_size: number; compositions: TFCompShare[]; traits: TFTraitShare[] };
+  balance: {
+    involution_index: number;
+    involution_k: number;
+    diversity_index: number;
+    notes: { involution: string; diversity: string };
+  };
+  core_cost_share: { win_share: Record<string, number>; top4_share: Record<string, number> };
+}
+
+interface TFCompositionCard {
+  key: string;
+  slug: string;
+  display_name_cn: string;
+  display_name_en: string;
+  compIcon: string;
+  compCost: number;
+  averagePlacementValue: number;
+}
+
+interface TFStrengthSeries {
+  key: string;
+  slug: string;
+  points: { date: string; strength: number }[];
+}
+
+interface TFCompStrengthTrends {
+  patch: string;
+  comparisonPatch: string;
+  generatedAt: string;
+  dates: string[];
+  series: TFStrengthSeries[];
+  patchChangeIndices: number[];
+  dateToPatch: Record<string, string>;
+  balance_daily: Record<
+    string,
+    {
+      involution_index: number;
+      diversity_index: number;
+      win_share_by_cost: Record<string, number>;
+      top4_share_by_cost: Record<string, number>;
+      delta_vs_previous_day: Record<string, number> | null;
+    }
+  >;
+}
+
+interface TFCompSummary {
+  slug: string;
+  avgPlacementValue: number;
+  trendDelta: number;
+  playRateDelta: number;
+  winShareDelta: number;
+}
+
+interface TFCompStat {
+  strength: number;
+  playRate: number;
+  strengthDelta: number;
+}
+
+interface TFRowDelta {
+  text: string;
+  positive: boolean | null;
+  value: number | null;
+}
+
+interface TFTrendRow {
+  slug: string;
+  name: string;
+  playRate: string;
+  playRateDelta: TFRowDelta;
+  avgPlacement: string;
+  avgPlacementDelta: TFRowDelta;
+  avgPlacementValue: number;
+  versionDeltaAvg: TFRowDelta | null;
+  versionDeltaPlay: TFRowDelta | null;
+  versionDeltaValue: number | null;
+  dateMetrics: { date: string; avgPlacement: number }[];
+}
+
+interface TFTrendItem {
+  slug: string;
+  name: string;
+  playRate: string;
+  playRateDelta: TFRowDelta;
+  winShare: string | null;
+  winShareDelta: TFRowDelta | null;
+  top4Share: string | null;
+  top4ShareDelta: TFRowDelta | null;
+  avgPlacement: string;
+  avgPlacementDelta: TFRowDelta;
+}
+
+interface TFUnitItem {
+  unitId: string;
+  unitCost: number;
+  unitPriority: number | null;
+  buckets: {
+    Core: { itemId: string; necessity: number; priorityScore: number | null }[];
+    Important: { itemId: string; necessity: number; priorityScore: number | null }[];
+    Optional: { itemId: string; necessity: number; priorityScore: number | null }[];
+    HighFrequency: { itemId: string; necessity: number; priorityScore: number | null }[];
+  };
+  bisItemIds: string[];
+  artifacts: { itemId: string; avgPlacement: number }[];
+  coreCompStrengths: { comp_key: string }[];
+}
+
+interface TFItemGuideEntry {
+  itemId: string;
+  itemName: string;
+  costBuckets: Record<string, { unitId: string; normalized: number; necessity: number }[]>;
+  compositions: { slug: string; name: string; unit_id: string }[];
+  type: string;
+}
+
+interface TFTierlistComp {
+  comp_id: string;
+  item_strength: number;
+  top_carrier_unit_id: string;
+  top_pair?: { item_ids: string[] };
+}
+
+interface TFTierlistRow {
+  artifact_id: string;
+  comps: TFTierlistComp[];
+}
+
+interface TFCompDetailUnit {
+  id: string;
+  name: string;
+  nameCn: string;
+  nameEn: string;
+  cost: number;
+  builds: { index: number; items: { id: string }[] }[];
+}
+
+interface TFCompDetailTrait {
+  id: string;
+  icon: string;
+  unitsRequired: number;
+  tierIndex: number | null;
+}
+
+interface TFPriorityRow {
+  unitId: string;
+  unitCost: number;
+  unitPriority: number | null;
+  bisItemIds: string[] | null;
+  buckets: {
+    Core: { itemId: string; necessity: number; priorityScore: number | null }[];
+    Important: { itemId: string; necessity: number; priorityScore: number | null }[];
+    Optional: { itemId: string; necessity: number; priorityScore: number | null }[];
+    HighFrequency: { itemId: string; necessity: number; priorityScore: number | null }[];
+  };
+}
+
+interface TFArtifactPick {
+  kind: string;
+  artifactId: string;
+  artifactName: string;
+  artifactIcon: string;
+  carrierUnitId: string;
+  carrierName: string;
+  carrierIcon: string;
+  carrierCost: number;
+  strength: number;
+  topPair: { items: { itemId: string; name: string; icon: string }[] } | null;
+}
+
+interface TFCompDetail {
+  slug: string;
+  key: string;
+  title: string;
+  titles: Record<string, string>;
+  overview: {
+    stats: { avgPlacement: string; avgPlacementValue: number; winRate: string; winRateValue: number };
+    coreUnits: TFCompDetailUnit[];
+    traits: TFCompDetailTrait[];
+    teamCode: string;
+  };
+  summary: { sampleSize: number; winRate: string };
+  metatftLink?: string;
+  filters?: { expr: string; carrierExclusions: string[]; exprByLocale: Record<string, string>; carrierExclusionsByLocale: Record<string, string> };
+  variants: {
+    is_primary: boolean;
+    variant_id: string;
+    variant_label: string;
+    clustered_stats: { share: number; avg_placement: number };
+    units: { id: string }[];
+    traits: TFCompDetailTrait[];
+  }[];
+  priorityMatrixRows: TFPriorityRow[];
+  specialGroups: {
+    artifacts: { unitId: string; items: { id: string; avgPlacement: number }[] }[];
+    radiants: { unitId: string; items: { id: string; avgPlacement: number }[] }[];
+    emblems: {
+      itemId: string;
+      avgPlacement: number;
+      appearanceRate: number;
+      carriers: { unit_id: string; best: boolean }[];
+    }[];
+  };
+  matchups: {
+    benefits: { key: string; delta: number }[];
+    counteredBy: { key: string; delta: number }[];
+    mutualConstraints: { key: string; delta: number }[];
+  } | null;
+  artifactPicks: { compStrength: number | null; picks: TFArtifactPick[] } | null;
+  dataSource: { patch: string; sample_count: number };
+}
+
+interface TFTtableData {
+  patch: string;
+  ranked_tiers: string[];
+  sampleSize: number;
+  timestamp: string;
+  metaStats: TFMetaStats;
+  compositionCards: TFCompositionCard[];
+  compStrengthTrends: TFCompStrengthTrends;
+  compAtlas: {
+    compositionSummaries: TFCompSummary[];
+    compStats: Record<string, TFCompStat>;
+  };
+  trends: {
+    dateColumns: string[];
+    versionDeltaMode: string;
+    versionDeltaWindowHint: string;
+    compositionRows: TFTrendRow[];
+    compositionTrendUp: TFTrendItem[];
+    compositionTrendDown: TFTrendItem[];
+    winshareTrendUp: TFTrendItem[];
+    winshareTrendDown: TFTrendItem[];
+  };
+  dailyStats: {
+    dateColumns: string[];
+    versionDeltaMode: string;
+    versionDeltaWindowHint: string;
+    compositionRows: TFTrendRow[];
+    compositionTrendUp: TFTrendItem[];
+    compositionTrendDown: TFTrendItem[];
+    winshareTrendUp: TFTrendItem[];
+    winshareTrendDown: TFTrendItem[];
+  };
+  unitItems: TFUnitItem[];
+  itemGuide: {
+    items: TFItemGuideEntry[];
+    artifacts: TFItemGuideEntry[];
+    emblems: TFItemGuideEntry[];
+  };
+  itemTierlist: {
+    generated_at?: string;
+    tabs: {
+      artifacts: { rows: TFTierlistRow[] };
+      "anima-items": { rows: TFTierlistRow[] };
+      emblems: { rows: TFTierlistRow[]; essentials?: TFTierlistRow[] };
+    };
+  };
+  compDetails: Record<string, {
+    composition: TFCompDetail;
+    itemCategories: Record<string, string[]>;
+    unitCategories: Record<string, string[]>;
+  }>;
 }
 
 const view = ref<"matches" | "stats" | "comps" | "data" | "meta">("matches");
@@ -451,81 +620,12 @@ const overview = computed(() => {
   };
 });
 
-// 反查：每件装备 → 适合哪些弈子（从 hero_items 统计）
-const itemHeroGroups = computed(() => {
-  if (!metaData.value) return [];
-  const groups: Record<string, { itemId: string; itemName: string; itemIcon: string; heroes: HeroItem[] }> = {};
-  for (const h of metaData.value.hero_items) {
-    for (const it of h.items) {
-      const g = (groups[it.id] ??= {
-        itemId: it.id,
-        itemName: it.name,
-        itemIcon: it.icon_url,
-        heroes: [],
-      });
-      g.heroes.push({
-        id: h.id,
-        name: h.name,
-        icon_url: h.icon_url,
-        appearances: it.appearances,
-        win_rate: it.win_rate,
-        top4_rate: it.top4_rate,
-      });
-    }
-  }
-  const out = Object.values(groups);
-  for (const g of out) {
-    g.heroes.sort((a, b) => b.appearances - a.appearances);
-  }
-  out.sort((a, b) => {
-    const ta = a.heroes.reduce((s, h) => s + h.appearances, 0);
-    const tb = b.heroes.reduce((s, h) => s + h.appearances, 0);
-    return tb - ta;
-  });
-  return out;
-});
-
-// 当前阵容的互害数据（以 selectedComp 为主羁绊，作为 A 的对手列表）
-const compCounters = computed(() => {
-  if (!selectedComp.value || !metaData.value) return [];
-  return metaData.value.counters
-    .filter((c) => c.a_id === selectedComp.value!.id)
-    .slice(0, 10);
-});
-
-// 内卷指数（辛普森集中度）与多样性指数
-const concentration = computed(() => {
-  if (!metaData.value || !metaData.value.named_comps.length) return 0;
-  const shares = metaData.value.named_comps.map((c) => c.win_share);
-  const sum = shares.reduce((a, b) => a + b, 0);
-  if (sum <= 0) return 0;
-  return shares.reduce((acc, s) => acc + (s / sum) * (s / sum), 0);
-});
-const diversity = computed(() => 1 - concentration.value);
-
+// 反查：每件装备 → 适合哪些弈子（由 itemGuide 直接提供，见下方）
 const costColors = ["#9aa4af", "#35c66b", "#3fa8f4", "#c26bf1", "#f5b23e"];
 
-// 阵容趋势图数据整合
+// 阵容趋势图配色
 const trendColors = ["#f0c24b", "#4d9de0", "#45d483", "#c26bf1", "#f0716f"];
-const trendDates = computed(() => metaData.value?.daily.map((d) => d.date) ?? []);
-const trendTopNames = computed(() => {
-  if (!metaData.value) return [];
-  const names: string[] = [];
-  for (const d of metaData.value.daily) {
-    for (const c of d.comps.slice(0, 5)) {
-      if (!names.includes(c.name)) names.push(c.name);
-    }
-    if (names.length >= 5) break;
-  }
-  return names.slice(0, 5);
-});
-// 每个 Top 阵容在每天的 win_share 折线（缺的天补 0）
-const trendLines = computed(() => {
-  if (!metaData.value) return [];
-  return trendTopNames.value.map((name) =>
-    metaData.value!.daily.map((d) => d.comps.find((c) => c.name === name)?.win_share ?? 0)
-  );
-});
+
 const filteredAugments = computed(() =>
   augments.value.filter((a) => matchName(search.value)(a.name))
 );
@@ -565,55 +665,177 @@ async function openData() {
   }
 }
 
-const metaData = ref<MetaResult | null>(null);
-const metaTab = ref<"comps" | "trend" | "daily" | "items" | "heroes" | "item_heroes">("comps");
+const tftData = ref<TFTtableData | null>(null);
+const metaTab = ref<"overview" | "trends" | "daily" | "tierlist" | "unitItems" | "itemGuide">("overview");
 const metaLoading = ref(false);
-const selectedComp = ref<CompDetail | null>(null);
+const selectedCompSlug = ref<string | null>(null);
+const tierlistTab = ref<"artifacts" | "emblems">("artifacts");
+const itemGuideTab = ref<"items" | "artifacts" | "emblems">("items");
+const itemSearch = ref("");
+const dailyMode = ref<"playRate" | "avp" | "patch">("playRate");
+const showDetails = ref(false);
 
-function showCompDetail(compId: string) {
-  selectedComp.value = metaData.value?.comp_details.find((d) => d.id === compId) ?? null;
-  if (!selectedComp.value) {
-    const c = metaData.value?.comps.find((x) => x.id === compId);
-    if (c) {
-      selectedComp.value = {
-        id: c.id,
-        name: c.name,
-        icon_url: c.icon_url,
-        appearances: c.appearances,
-        win_rate: c.win_rate,
-        top4_rate: c.top4_rate,
-        avg_placement: 0,
-        units: [],
-        traits: [],
-      };
-    }
-  }
+const TF = "https://tftable.cc";
+function tfImg(path: string | undefined): string {
+  return path ? (path.startsWith("/") ? TF + path : path) : "";
+}
+function unitIcon(id: string): string { return TF + "/set18/avatar-webp/" + id + ".webp?v=5"; }
+function itemIcon(id: string): string { return TF + "/set18/item-webp/" + id + ".webp?v=4"; }
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+function traitIcon(id: string): string { return TF + "/set18/trait-svg/" + id + ".svg?v=1"; }
+
+// ===== 名称映射（中文优先） =====
+const NAME_MAP = {"units":{"DA_18_ElderDragon":{"cn":"远古巨龙","en":"Elder Dragon","c":5},"DA_Draven18":{"cn":"德莱文","en":"Draven","c":5},"DA_18_Maokai":{"cn":"茂凯","en":"Maokai","c":5},"DA_18_Kennen":{"cn":"凯南","en":"Kennen","c":5},"DA_Taric18":{"cn":"塔里克","en":"Taric","c":5},"DA_Amumu18":{"cn":"阿木木","en":"Amumu","c":4},"DA_Sentinel18":{"cn":"苍蓝雕纹魔像","en":"Sentinel","c":4},"DA_Lux18_Base":{"cn":"拉克丝","en":"Lux","c":5},"DA_18_Ivern":{"cn":"艾翁","en":"Ivern","c":5},"DA_18_Ezreal":{"cn":"伊泽瑞尔","en":"Ezreal","c":4},"DA_18_GnarSmall":{"cn":"纳尔","en":"Gnar","c":5},"DA_18_Alistar":{"cn":"阿利斯塔","en":"Alistar","c":2},"DA_18_Ahri":{"cn":"阿狸","en":"Ahri","c":4},"DA_18_Morgana":{"cn":"莫甘娜","en":"Morgana","c":4},"DA_18_Sett":{"cn":"瑟提","en":"Sett","c":4},"DA_18_Alune":{"cn":"拉露恩","en":"Alune","c":5},"DA_18_Ashe":{"cn":"艾希","en":"Ashe","c":5},"DA_Krug18":{"cn":"远古石甲虫","en":"Krug","c":3},"DA_18_Sentry":{"cn":"苍蓝哨戒","en":"Pebbles","c":1},"DA_18_Malphite":{"cn":"墨菲特","en":"Malphite","c":4},"DA_Nidalee18_AP":{"cn":"奈德丽","en":"Nidalee","c":4},"DA_18_Sivir":{"cn":"希维尔","en":"Sivir","c":4},"DA_KogMaw18_AD":{"cn":"克格莫","en":"Kog'Maw","c":3},"DA_Cinderling18":{"cn":"绯红树怪","en":"Cinderling","c":1},"DA_18_RekSai":{"cn":"雷克塞","en":"Rek'Sai","c":1},"DA_18_Veigar":{"cn":"维迦","en":"Veigar","c":1},"DA_18_Ornn":{"cn":"奥恩","en":"Ornn","c":1},"DA_18_LeBlanc":{"cn":"乐芙兰","en":"LeBlanc","c":2},"DA_18_Cassiopeia":{"cn":"卡西奥佩娅","en":"Cassiopeia","c":3},"DA_Fiddlesticks18":{"cn":"费德提克","en":"Fiddlesticks","c":3},"DA_18_Soraka":{"cn":"索拉卡","en":"Soraka","c":4},"DA_18_Zyra":{"cn":"婕拉","en":"Zyra","c":4},"DA_18_Azir":{"cn":"阿兹尔","en":"Azir","c":3},"DA_18_Yorick":{"cn":"约里克","en":"Yorick","c":1},"DA_Vi18":{"cn":"蔚","en":"Vi","c":3},"DA_18_Rakan":{"cn":"洛","en":"Rakan","c":1},"DA_18_Aphelios":{"cn":"厄斐琉斯","en":"Aphelios","c":4},"DA_18_Diana":{"cn":"黛安娜","en":"Diana","c":3},"DA_18_Varus":{"cn":"韦鲁斯","en":"Varus","c":1},"DA_Karma18":{"cn":"卡尔玛","en":"Karma","c":1},"DA_18_Hecarim":{"cn":"赫卡里姆","en":"Hecarim","c":3},"DA_18_Akali_AD":{"cn":"阿卡丽","en":"Akali","c":1},"DA_18_Camille":{"cn":"卡蜜尔","en":"Camille","c":1},"DA_18_Leona":{"cn":"蕾欧娜","en":"Leona","c":1},"DA_18_Kayle":{"cn":"凯尔","en":"Kayle","c":2},"DA_18_Sejuani":{"cn":"瑟庄妮","en":"Sejuani","c":2},"DA_18_Lillia":{"cn":"莉莉娅","en":"Lillia","c":4},"DA_18_Xayah":{"cn":"霞","en":"Xayah","c":1},"DA_Scuttlecrab18":{"cn":"峡谷迅捷蟹","en":"Scuttlecrab","c":2},"DA_Brambleback18":{"cn":"绯红印记树怪","en":"Brambleback","c":4},"DA_Murkwolf18":{"cn":"暗影狼","en":"Murkwolf","c":2},"DA_18_Yunara":{"cn":"芸阿娜","en":"Yunara","c":2},"DA_18_Rengar":{"cn":"雷恩加尔","en":"Rengar","c":3},"DA_18_Tristana":{"cn":"崔丝塔娜","en":"Tristana","c":3},"DA_18_Rammus":{"cn":"拉莫斯","en":"Rammus","c":3},"DA_18_KhaZix":{"cn":"卡兹克","en":"Kha'Zix","c":3},"DA_18_MasterYi_AD":{"cn":"易","en":"Master Yi","c":3},"DA_CrimsonRaptor18":{"cn":"深红锋喙鸟","en":"Mama Beak","c":3},"DA_18_Caitlyn":{"cn":"凯特琳","en":"Caitlyn","c":2},"DA_18_Shen":{"cn":"慎","en":"Shen","c":2},"DA_18_Elise":{"cn":"伊莉丝","en":"DA_18_Elise","c":0},"DA_Gromp18_AP":{"cn":"魔沼蛙","en":"DA_Gromp18_AP","c":0},"DA_18_Teemo":{"cn":"提莫","en":"DA_18_Teemo","c":0},"DA_18_Kobuko":{"cn":"可酷伯","en":"DA_18_Kobuko","c":0},"DA_18_Warwick":{"cn":"沃里克","en":"DA_18_Warwick","c":0}},"items":{"DA_AdaptiveHelm":{"cn":"适应性头盔","en":"Adaptive Helm"},"DA_ArchangelsStaff":{"cn":"大天使之杖","en":"Archangel's Staff"},"DA_BlueBuff":{"cn":"蓝霸符","en":"Blue Buff"},"DA_BrambleVest":{"cn":"棘刺背心","en":"Bramble Vest"},"DA_Crownguard":{"cn":"冕卫","en":"Crownguard"},"DA_DragonsClaw":{"cn":"巨龙之爪","en":"Dragon's Claw"},"DA_EdgeOfNight":{"cn":"夜之锋刃","en":"Edge of Night"},"DA_Evenshroud":{"cn":"薄暮法袍","en":"Evenshroud"},"DA_GargoyleStoneplate":{"cn":"石像鬼石板甲","en":"Gargoyle Stoneplate"},"DA_GiantSlayer":{"cn":"巨人杀手","en":"Giant Slayer"},"DA_GuinsoosRageblade":{"cn":"鬼索的狂暴之刃","en":"Guinsoo's Rageblade"},"DA_HandOfJustice":{"cn":"正义之手","en":"Hand Of Justice"},"DA_HextechGunblade":{"cn":"海克斯科技枪刃","en":"Hextech Gunblade"},"DA_InfinityEdge":{"cn":"无尽之刃","en":"Infinity Edge"},"DA_IonicSpark":{"cn":"离子火花","en":"Ionic Spark"},"DA_KrakensFury":{"cn":"海妖之怒","en":"Kraken's Fury"},"DA_LastWhisper":{"cn":"最后的轻语","en":"Last Whisper"},"DA_Morellonomicon":{"cn":"莫雷洛秘典","en":"Morellonomicon"},"DA_ProtectorsVow":{"cn":"圣盾使的誓约","en":"Protector's Vow"},"DA_Quicksilver":{"cn":"水银","en":"Quicksilver"},"DA_RabadonsDeathcap":{"cn":"灭世者的死亡之帽","en":"Rabadon's Deathcap"},"DA_RedBuff":{"cn":"红霸符","en":"Red Buff"},"DA_SpearOfShojin":{"cn":"朔极之矛","en":"Spear of Shojin"},"DA_SpiritVisage":{"cn":"振奋盔甲","en":"Spirit Visage"},"DA_SteraksGage":{"cn":"斯特拉克的挑战护手","en":"Sterak's Gage"},"DA_StrikersFlail":{"cn":"强袭者的链枷","en":"Striker's Flail"},"DA_SunfireCape":{"cn":"日炎斗篷","en":"Sunfire Cape"},"DA_ThiefsGloves":{"cn":"窃贼手套","en":"Thief's Gloves"},"DA_TitansResolve":{"cn":"泰坦的坚决","en":"Titan's Resolve"},"DA_VoidStaff":{"cn":"虚空之杖","en":"Void Staff"},"DA_WarmogsArmor":{"cn":"狂徒铠甲","en":"Warmogs Armor"},"DA_Deathblade":{"cn":"死亡之刃","en":"Deathblade"},"DA_SteadfastHeart":{"cn":"坚定之心","en":"Steadfast Heart"},"DA_JeweledGauntlet":{"cn":"珠光护手","en":"Jeweled Gauntlet"},"DA_Bloodthirster":{"cn":"饮血剑","en":"Bloodthirster"},"DA_NashorsTooth":{"cn":"纳什之牙","en":"Nashor's Tooth"},"DA_Artifact_SilvermereDawn":{"cn":"密银黎明","en":"Silvermere Dawn"},"DA_Artifact_ZhonyasParadox":{"cn":"Zhonya's Paradox","en":"Zhonya's Paradox"},"DA_Artifact_LightshieldCrest":{"cn":"光盾徽章","en":"Lightshield Crest"},"DA_Artifact_TheIndomitable":{"cn":"顽强不屈","en":"The Indomitable"},"DA_Artifact_Dawncore":{"cn":"黎明核心","en":"Dawncore"},"DA_Artifact_VoidGauntlet":{"cn":"虚空护手","en":"Void Gauntlet"},"DA_Artifact_GoldCollector":{"cn":"金币收集者","en":"Gold Collector"},"DA_Artifact_AegisOfDusk":{"cn":"黄昏圣盾","en":"Aegis of Dusk"},"DA_Artifact_LudensTempest":{"cn":"卢登的激荡","en":"Luden's Tempest"},"DA_Artifact_HellfireHatchet":{"cn":"Hellfire Hatchet","en":"Hellfire Hatchet"},"DA_Artifact_SeekersArmguard":{"cn":"探索者的护臂","en":"Seeker's Armguard"},"DA_Artifact_WitsEnd":{"cn":"Wit's End","en":"Wit's End"},"DA_Artifact_HorizonFocus":{"cn":"视界专注","en":"Horizon Focus"},"DA_Artifact_LichBane":{"cn":"巫妖之祸","en":"Lich Bane"},"DA_Artifact_RapidFireCannon":{"cn":"疾射火炮","en":"Rapid Firecannon"},"DA_Artifact_Mittens":{"cn":"Mittens","en":"Mittens"},"DA_Artifact_NavoriFlickerblade":{"cn":"烁刃","en":"Flickerblades"},"DA_Artifact_BlightingJewel":{"cn":"Blighting Jewel","en":"Blighting Jewel"},"DA_Artifact_EternalPact":{"cn":"永恒契约","en":"Eternal Pact"},"DA_Artifact_Manazane":{"cn":"魔蕴","en":"Manazane"},"DA_Artifact_Fishbones":{"cn":"鱼骨头","en":"Fishbones"},"DA_Artifact_InfinityForce":{"cn":"三相之力","en":"Infinity Force"},"DA_Artifact_TitanicHydra":{"cn":"巨型九头蛇","en":"Titanic Hydra"},"DA_Artifact_Hullcrusher":{"cn":"Hullcrusher","en":"Hullcrusher"},"DA_Artifact_StatikkShiv":{"cn":"Statikk Shiv","en":"Statikk Shiv"},"DA_Artifact_ForbiddenIdol":{"cn":"Forbidden Idol","en":"Forbidden Idol"},"DA_Artifact_AegisOfDawn":{"cn":"黎明圣盾","en":"Aegis of Dawn"},"DA_18_EmblemElderwood":{"cn":"永恒之森纹章","en":"Elderwood Emblem"},"DA_18_EmblemInvoker":{"cn":"神谕纹章","en":"Invoker Emblem"},"DA_18_EmblemJuggernaut":{"cn":"主宰纹章","en":"Juggernaut Emblem"},"DA_18_EmblemFloraFatalisAugment":{"cn":"绝命花妖纹章","en":"Flora Fatalis Emblem"},"DA_18_EmblemExecutioner":{"cn":"裁决使纹章","en":"Executioner Emblem"},"DA_18_EmblemRapidfire":{"cn":"迅捷射手纹章","en":"Rapidfire Emblem"},"DA_18_EmblemFae":{"cn":"花仙子纹章","en":"Fae Emblem"},"DA_18_EmblemSpellweaver":{"cn":"法师纹章","en":"Spellweaver Emblem"},"DA_18_EmblemVanguard":{"cn":"重装战士纹章","en":"Vanguard Emblem"},"DA_18_EmblemBrawler":{"cn":"斗士纹章","en":"Brawler Emblem"},"DA_18_EmblemDefender":{"cn":"护卫纹章","en":"Defender Emblem"},"DA_18_EmblemSlayer":{"cn":"狂战士纹章","en":"Ravager Emblem"},"DA_18_EmblemHunter":{"cn":"猎人纹章","en":"Hunter Emblem"},"DA_18_EmblemInferno":{"cn":"地狱火纹章","en":"Inferno Emblem"},"DA_18_EmblemFloraFatalis":{"cn":"绝命花妖纹章","en":"Flora Fatalis Emblem"},"DA_18_EmblemBlossom":{"cn":"灵魂莲华纹章","en":"Blossom Emblem"},"DA_18_EmblemPrimal":{"cn":"野兽之灵纹章","en":"Primal Emblem"},"DA_18_EmblemLunar":{"cn":"月蚀骑士纹章","en":"Lunar Emblem"},"DA_18_EmblemBlackthorn":{"cn":"黑荆棘纹章","en":"Blackthorn Emblem"},"DA_18_EmblemSprykin":{"cn":"约德尔人和朋友纹章","en":"Sprykin Emblem"},"DA_Artifact_MogulsMail":{"cn":"大亨之铠","en":"Mogul'sMail"},"DA_Item_Artifact_TalismanOfAscension":{"cn":"Talisman of Ascension","en":"Talisman of Ascension"},"DA_TacticiansShield":{"cn":"金锅锅冠冕","en":"DA_TacticiansShield"},"DA_Component_TearOfTheGoddess":{"cn":"女神之泪","en":"DA_Component_TearOfTheGoddess"},"DA_Component_ChainVest":{"cn":"锁子甲","en":"DA_Component_ChainVest"},"DA_Component_BFSword":{"cn":"暴风大剑","en":"DA_Component_BFSword"},"DA_TacticiansCrown":{"cn":"金铲铲冠冕","en":"DA_TacticiansCrown"},"DA_Component_NeedlesslyLargeRod":{"cn":"无用大棒","en":"DA_Component_NeedlesslyLargeRod"},"DA_TacticiansCape":{"cn":"金锅铲冠冕","en":"DA_TacticiansCape"},"DA_Component_NegatronCloak":{"cn":"负极斗篷","en":"DA_Component_NegatronCloak"},"DA_Component_GiantsBelt":{"cn":"巨人腰带","en":"DA_Component_GiantsBelt"},"DA_Component_SparringGloves":{"cn":"拳套","en":"DA_Component_SparringGloves"},"DA_Component_RecurveBow":{"cn":"反曲之弓","en":"DA_Component_RecurveBow"}},"traits":{"__others__":{"cn":"其他 (<0.3%)","en":"Others (<0.3%)"},"DA_18_Blossom":{"cn":"灵魂莲华","en":"Blossom"},"DA_18_Executioner":{"cn":"裁决使","en":"Executioner"},"DA_18_Lunar":{"cn":"月蚀骑士","en":"Lunar"},"DA_18_Inferno":{"cn":"地狱火","en":"Inferno"},"DA_18_Vanguard":{"cn":"重装战士","en":"Vanguard"},"DA_Riftbeast18":{"cn":"峡谷野怪","en":"Riftbeast"},"DA_18_ApexPredator":{"cn":"顶级掠食者","en":"DA_18_ApexPredator"},"DA_18_Maokai_UniqueTrait":{"cn":"远古树精","en":"DA_18_Maokai_UniqueTrait"},"DA_Juggernaut18":{"cn":"主宰","en":"DA_Juggernaut18"},"DA_18_Greenfather":{"cn":"翠神","en":"DA_18_Greenfather"},"DA_Emerald18":{"cn":"宝石骑士","en":"DA_Emerald18"},"DA_Primal18":{"cn":"野兽之灵","en":"DA_Primal18"},"DA_18_Hunter":{"cn":"猎人","en":"DA_18_Hunter"},"DA_DravenUniqueTrait18":{"cn":"赏金猎人","en":"DA_DravenUniqueTrait18"},"DA_18_Brawler":{"cn":"斗士","en":"DA_18_Brawler"},"DA_18_LuxUniqueTrait":{"cn":"自然之力！大元素使","en":"DA_18_LuxUniqueTrait"},"DA_18_Invoker":{"cn":"神谕","en":"DA_18_Invoker"},"DA_18_Caustic":{"cn":"帝王斑蝶","en":"DA_18_Caustic"},"DA_AluneUniqueTrait18":{"cn":"月华神女","en":"DA_AluneUniqueTrait18"},"DA_18_Fae":{"cn":"花仙子","en":"DA_18_Fae"},"DA_18_Defender":{"cn":"护卫","en":"DA_18_Defender"},"DA_18_ZyraUniqueTrait":{"cn":"荆棘之兴","en":"DA_18_ZyraUniqueTrait"},"DA_FloraFatalis18":{"cn":"绝命花妖","en":"DA_FloraFatalis18"},"DA_18_Summoner":{"cn":"召唤师","en":"DA_18_Summoner"},"DA_18_Blackthorn":{"cn":"黑荆棘","en":"DA_18_Blackthorn"},"DA_18_Battlemage":{"cn":"魔岩巨兽","en":"DA_18_Battlemage"},"DA_18_Rival":{"cn":"宿敌","en":"DA_18_Rival"},"DA_18_Adaptor":{"cn":"魔战士","en":"DA_18_Adaptor"},"DA_18_Spellweaver":{"cn":"法师","en":"DA_18_Spellweaver"},"DA_18_Sprykin":{"cn":"约德尔人和朋友","en":"DA_18_Sprykin"},"DA_18_Rapidfire":{"cn":"迅捷射手","en":"DA_18_Rapidfire"},"DA_18_Slayer":{"cn":"狂战士","en":"DA_18_Slayer"},"DA_18_Elderwood":{"cn":"永恒之森","en":"DA_18_Elderwood"},"DA_18_Solar":{"cn":"日蚀骑士","en":"DA_18_Solar"},"DA_18_Coven":{"cn":"魔女","en":"DA_18_Coven"}}};
+
+function mapLookup(map: Record<string, any>, id: string): string {
+  if (!id) return "";
+  const e = map[id];
+  if (e) return e.cn || e.en || id;
+  // 兜底：去掉 DA_ 前缀并按驼峰分词
+  let s = String(id).replace(/^DA_18_/, "").replace(/^DA_/, "").replace(/^TFT_/, "");
+  s = s.replace(/18$/i, "");
+  s = s.replace(/([a-z])([A-Z])/g, "$1 $2").replace(/_/g, " ");
+  return s;
+}
+function unitName(id: string): string {
+  return mapLookup(NAME_MAP.units as Record<string, any>, id);
+}
+function itemName(id: string): string {
+  return mapLookup(NAME_MAP.items as Record<string, any>, id);
+}
+function traitName(id: string): string {
+  return mapLookup(NAME_MAP.traits as Record<string, any>, id);
+}
+function unitNameEn(id: string): string {
+  if (!id) return "";
+  const e = (NAME_MAP.units as Record<string, any>)[id];
+  return e ? e.en || e.cn || id : id;
+}
+
+function showCompDetail(slug: string) {
+  selectedCompSlug.value = slug;
   view.value = "comps";
 }
-
 function closeCompDetail() {
-  selectedComp.value = null;
+  selectedCompSlug.value = null;
 }
-
-// 具名阵容 key = "主羁绊|C位" → 跳转到主羁绊的 comp_detail
-function showNamedComp(key: string) {
-  const primary = key.split("|")[0];
-  showCompDetail(primary);
-}
+const selectedCompDetail = computed(() => {
+  if (!selectedCompSlug.value || !tftData.value) return null;
+  return tftData.value.compDetails[selectedCompSlug.value] ?? null;
+});
+const selectedCard = computed(() => {
+  if (!selectedCompSlug.value) return null;
+  return cardOf(selectedCompSlug.value);
+});
+const specialGroupsVisible = computed(() => {
+  if (!selectedCompDetail.value) return false;
+  const sg = selectedCompDetail.value.composition.specialGroups;
+  return sg.artifacts.length > 0 || sg.radiants.length > 0 || sg.emblems.length > 0;
+});
 
 async function getMeta() {
   metaLoading.value = true;
   error.value = "";
   try {
-    const r = await invoke<MetaResult>("get_meta");
-    metaData.value = r;
-    lastSync.value = r.sample_count > 0 ? `样本 ${r.sample_count} 局` : "";
+    const r = await invoke<TFTtableData>("get_tftable_data");
+    tftData.value = r;
+    lastSync.value = r.sampleSize > 0 ? `${r.metaStats.metadata.patch} · ${r.sampleSize.toLocaleString()} 样本` : "";
   } catch (e) {
     error.value = String(e);
-    metaData.value = null;
+    tftData.value = null;
   } finally {
     metaLoading.value = false;
   }
+}
+
+// === helpers ===
+function cardOf(slug: string): TFCompositionCard {
+  return tftData.value?.compositionCards.find((c) => c.slug === slug) ?? { key: slug, slug, display_name_cn: slug, display_name_en: slug, compIcon: "", compCost: 0, averagePlacementValue: 0 };
+}
+function statOf(slug: string): TFCompStat {
+  return tftData.value?.compAtlas.compStats[slug] ?? { strength: 0, playRate: 0, strengthDelta: 0 };
+}
+function compName(slug: string): string {
+  return cardOf(slug).display_name_cn || cardOf(slug).display_name_en || slug;
+}
+function compCardIcon(slug: string): string {
+  const c = cardOf(slug);
+  return c.compIcon ? tfImg(c.compIcon) : unitIcon(slug);
+}
+function compCarryIcon(slug: string): string {
+  const detail = tftData.value?.compDetails[slug];
+  if (detail?.composition.overview.coreUnits.length) return unitIcon(detail.composition.overview.coreUnits[0].id);
+  return slug;
+}
+function costShareArr(obj: Record<string, number>): number[] {
+  return [1, 2, 3, 4, 5].map((k) => obj[String(k)] ?? 0);
+}
+function fmtSigned(v: number | undefined | null, suffix: string = ""): string {
+  if (v == null) return "—";
+  const s = v > 0 ? "+" : "";
+  return s + (v * 100).toFixed(2) + suffix;
+}
+
+const sortedComps = computed(() => {
+  if (!tftData.value) return [];
+  return [...tftData.value.compAtlas.compositionSummaries].sort((a, b) => a.avgPlacementValue - b.avgPlacementValue);
+});
+const winShareComps = computed(() => tftData.value ? [...tftData.value.metaStats.winShare.compositions].sort((a, b) => b.wins - a.wins) : []);
+const top4ShareComps = computed(() => tftData.value ? [...tftData.value.metaStats.top4Share.compositions].sort((a, b) => b.wins - a.wins) : []);
+const sortedTrendRows = computed(() => tftData.value ? [...tftData.value.trends.compositionRows].sort((a, b) => a.avgPlacementValue - b.avgPlacementValue) : []);
+
+const trendDates = computed(() => tftData.value?.compStrengthTrends.dates ?? []);
+const trendTopNames = computed(() => {
+  if (!tftData.value) return [];
+  const top = [...tftData.value.compStrengthTrends.series]
+    .sort((a, b) => (b.points[b.points.length - 1]?.strength ?? 0) - (a.points[a.points.length - 1]?.strength ?? 0))
+    .slice(0, 5);
+  return top.map((s) => compName(s.slug));
+});
+const trendLines = computed(() => {
+  if (!tftData.value) return [];
+  const top = [...tftData.value.compStrengthTrends.series]
+    .sort((a, b) => (b.points[b.points.length - 1]?.strength ?? 0) - (a.points[a.points.length - 1]?.strength ?? 0))
+    .slice(0, 5);
+  const dates = tftData.value.compStrengthTrends.dates;
+  return top.map((s) =>
+    dates.map((d) => {
+      const pt = s.points.find((p) => p.date === d);
+      return pt ? pt.strength : 0;
+    })
+  );
+});
+const balanceTrendLines = computed(() => {
+  if (!tftData.value) return ["", ""];
+  const bd = tftData.value.compStrengthTrends.balance_daily;
+  const dates = tftData.value.compStrengthTrends.dates;
+  const toPoints = (fn: (v: any) => number) =>
+    dates
+      .map((d, j) => {
+        const v = bd[d];
+        const val = v ? fn(v) : 0;
+        return (40 + j * (600 / Math.max(1, dates.length - 1))) + "," + (205 - val * 100);
+      })
+      .join(" ");
+  return [toPoints((v) => v.involution_index), toPoints((v) => v.diversity_index)];
+});
+
+const currentItemGuide = computed(() => {
+  if (!tftData.value) return [];
+  const g = tftData.value.itemGuide;
+  let list: TFItemGuideEntry[];
+  if (itemGuideTab.value === "artifacts") list = g.artifacts;
+  else if (itemGuideTab.value === "emblems") list = g.emblems;
+  else list = g.items;
+  if (!itemSearch.value) return list;
+  const q = itemSearch.value.toLowerCase();
+  return list.filter((it) => it.itemName.toLowerCase().includes(q) || it.itemId.toLowerCase().includes(q));
+});
+function sortedBuckets(buckets: Record<string, { unitId: string; normalized: number; necessity: number }[]>): Record<string, { unitId: string; normalized: number; necessity: number }[]> {
+  const keys = Object.keys(buckets).sort();
+  const sorted: Record<string, any[]> = {};
+  for (const k of keys) sorted[k] = buckets[k];
+  return sorted;
 }
 
 const navGroups: {
@@ -643,12 +865,12 @@ const navGroups: {
     label: "数据",
     icon: "★",
     children: [
-      { label: "环境总览", go: () => (metaTab.value = "comps") },
-      { label: "阵容趋势", go: () => (metaTab.value = "trend") },
-      { label: "每日统计", go: () => (metaTab.value = "daily") },
-      { label: "神器纹章", go: () => (metaTab.value = "items") },
-      { label: "按弈子", go: () => (metaTab.value = "heroes") },
-      { label: "按装备", go: () => (metaTab.value = "item_heroes") },
+      { label: "Meta总览", go: () => (metaTab.value = "overview") },
+      { label: "阵容趋势", go: () => (metaTab.value = "trends") },
+      { label: "每日数据", go: () => (metaTab.value = "daily") },
+      { label: "装备梯队", go: () => (metaTab.value = "tierlist") },
+      { label: "按弈子", go: () => (metaTab.value = "unitItems") },
+      { label: "按装备", go: () => (metaTab.value = "itemGuide") },
     ],
   },
 ];
@@ -1198,108 +1420,299 @@ onMounted(async () => {
         </template>
       </template>
 
-      <!-- 推荐阵容列表（直接展示完整构成） -->
+      <!-- 阵容一览 + 阵容详情 -->
       <template v-else-if="view === 'comps'">
         <header class="topbar">
-          <h2>推荐阵容</h2>
+          <h2>阵容一览</h2>
           <button @click="getMeta" :disabled="metaLoading">
             {{ metaLoading ? "加载中…" : "刷新" }}
           </button>
         </header>
-        <div class="odds-note">高分段常用阵容（来源：国际服王者/宗师/大师对局）。</div>
+        <div class="odds-note">当前版本 {{ tftData?.patch }} · 高分段常用阵容，按强度排序。</div>
 
-        <div v-if="metaData && metaData.comp_details.length" class="recommend-list">
-          <div
-            v-for="cd in metaData.comp_details.slice(0, 20)"
-            :key="cd.id"
-            class="recommend-card"
-          >
-            <header class="topbar recommend-head">
-              <h3 class="detail-title">
-                <img v-if="cd.icon_url" :src="cd.icon_url" :alt="cd.name" class="top-icon" />
-                {{ cd.name }}
-              </h3>
-              <span class="muted">{{ cd.appearances }} 局</span>
-              <span class="meta-num accent">{{ (cd.win_rate * 100).toFixed(1) }}%</span>
-              <span class="meta-num accent green">{{ (cd.top4_rate * 100).toFixed(1) }}%</span>
-              <span class="muted">均 {{ cd.avg_placement.toFixed(2) }}</span>
+        <template v-if="selectedCompDetail && selectedCard">
+          <div class="comp-detail">
+            <header class="topbar">
+              <button class="ghost" @click="closeCompDetail">← 返回阵容列表</button>
+              <h2 class="detail-title">
+                <img :src="tfImg(selectedCard.compIcon)" :alt="selectedCard.display_name_cn" class="top-icon" />
+                {{ selectedCard.display_name_cn }}
+                <span class="muted en-name">{{ selectedCard.display_name_en }}</span>
+              </h2>
             </header>
 
-            <!-- 羁绊（上） -->
-            <div class="recommend-traits">
-              <span v-for="t in cd.traits.slice(0, 6)" :key="t.id" class="trait-chip">
-                {{ t.name || t.id }}
-              </span>
+            <!-- 概览统计 -->
+            <div class="comp-stat-cards">
+              <div class="stat-card">
+                <div class="stat-value">{{ selectedCompDetail.composition.overview.stats.avgPlacement }}</div>
+                <div class="stat-label">平均名次</div>
+              </div>
+              <div class="stat-card">
+                <div class="stat-value">{{ selectedCompDetail.composition.overview.stats.winRate }}</div>
+                <div class="stat-label">吃鸡率</div>
+              </div>
+              <div class="stat-card">
+                <div class="stat-value">{{ selectedCompDetail.composition.summary.sampleSize.toLocaleString() }}</div>
+                <div class="stat-label">样本</div>
+              </div>
+              <div class="stat-card">
+                <div class="stat-value">{{ selectedCompDetail.composition.dataSource.patch }}</div>
+                <div class="stat-label">数据版本</div>
+              </div>
+            </div>
+            <div v-if="selectedCompDetail.composition.metatftLink" class="ext-link-wrap">
+              <a :href="selectedCompDetail.composition.metatftLink" target="_blank" rel="noopener" class="ext-link">在 MetaTFT 查看该阵容 →</a>
             </div>
 
-            <!-- 弈子 + 装备贴图（下） -->
-            <div class="recommend-units">
-              <div
-                v-for="u in cd.units"
-                :key="u.id"
-                class="recommend-unit"
-                :title="u.name"
-              >
-                <div class="recommend-unit-icon">
-                  <img v-if="u.icon_url" :src="u.icon_url" :alt="u.name" />
-                  <span v-if="u.avg_tier" class="recommend-star">
-                    {{ "★".repeat(Math.max(1, Math.round(u.avg_tier))) }}
-                  </span>
+            <!-- 核心阵容 -->
+            <section class="board-section">
+              <h3>核心弈子与出装</h3>
+              <div class="detail-board">
+                <div v-for="u in selectedCompDetail.composition.overview.coreUnits" :key="u.id" class="detail-unit">
+                  <div class="detail-unit-icon-wrap" :class="'cost' + u.cost">
+                    <img :src="unitIcon(u.id)" :alt="u.nameCn" class="unit-icon" />
+                  </div>
+                  <div class="detail-unit-name">{{ u.nameCn }}</div>
+                  <div class="detail-unit-en muted">{{ u.nameEn }}</div>
+                  <div class="detail-builds">
+                    <div v-for="b in u.builds" :key="b.index" class="detail-build" :title="'出装 ' + b.index">
+                      <img v-for="it in b.items" :key="it.id" :src="itemIcon(it.id)" :alt="it.id" class="mini-item" />
+                    </div>
+                    <div v-if="!u.builds.length" class="muted tiny">无核心出装</div>
+                  </div>
                 </div>
-                <div class="recommend-unit-items">
-                  <img
-                    v-for="it in u.items.slice(0, 3)"
-                    :key="it.id"
-                    :src="it.icon_url"
-                    :alt="it.name"
-                    class="recommend-item"
-                  />
+              </div>
+            </section>
+
+            <!-- 羁绊 -->
+            <section class="board-section">
+              <h3>关键羁绊</h3>
+              <div class="traits">
+                <div v-for="t in selectedCompDetail.composition.overview.traits" :key="t.id" class="trait">
+                  <img v-if="t.icon" :src="tfImg(t.icon)" :alt="traitName(t.id)" class="trait-icon" />
+                  <span class="trait-name">{{ traitName(t.id) }}</span>
+                  <span class="trait-tier">{{ t.unitsRequired }} 单位</span>
                 </div>
-                <div class="recommend-unit-name">{{ u.name || u.id }}</div>
+              </div>
+            </section>
+
+            <!-- 变体 -->
+            <section v-if="selectedCompDetail.composition.variants.length" class="board-section">
+              <h3>阵容变体</h3>
+              <div class="variant-list">
+                <div v-for="(v, i) in selectedCompDetail.composition.variants" :key="v.variant_id" class="variant-card">
+                  <div class="variant-head">
+                    <span class="variant-name">变体 {{ i + 1 }}<span v-if="v.is_primary" class="badge">主力</span></span>
+                    <span class="muted">占比 {{ (v.clustered_stats.share * 100).toFixed(1) }}% · 均 {{ v.clustered_stats.avg_placement.toFixed(2) }}</span>
+                  </div>
+                  <div class="variant-units">
+                    <img v-for="u in v.units" :key="u.id" :src="unitIcon(u.id)" :alt="unitName(u.id)" class="mini-unit" :title="unitName(u.id)" />
+                  </div>
+                  <div v-if="v.traits.length" class="variant-traits">
+                    <span v-for="t in v.traits" :key="t.id" class="trait-chip">
+                      <img v-if="t.icon" :src="tfImg(t.icon)" :alt="traitName(t.id)" class="trait-icon-sm" />
+                      {{ t.unitsRequired }} {{ traitName(t.id) }}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            <!-- 出装优先级矩阵 -->
+            <section class="board-section">
+              <h3>出装优先级矩阵</h3>
+              <div v-for="r in selectedCompDetail.composition.priorityMatrixRows" :key="r.unitId" class="prio-row">
+                <div class="prio-head">
+                  <img :src="unitIcon(r.unitId)" class="top-icon" :alt="unitName(r.unitId)" />
+                  <span class="prio-unit">{{ unitName(r.unitId) }}</span>
+                  <span class="muted tiny" style="margin-left:4px; font-size:10px">{{ unitNameEn(r.unitId) }}</span>
+                  <span v-if="r.unitPriority != null" class="muted tiny" style="margin-left:4px">优先度 {{ r.unitPriority.toFixed(2) }}</span>
+                </div>
+                <div class="prio-buckets">
+                  <div v-if="r.buckets.Core.length" class="prio-bucket">
+                    <span class="prio-bucket-lbl">核心</span>
+                    <div class="prio-items">
+                      <div v-for="it in r.buckets.Core" :key="it.itemId" class="prio-item">
+                        <img :src="itemIcon(it.itemId)" class="mini-item" :title="itemName(it.itemId) + ' (' + it.necessity.toFixed(2) + ')'" />
+                        <span class="prio-item-nec">{{ it.necessity.toFixed(2) }}</span>
+                      </div>
+                    </div>
+                  </div>
+                  <div v-if="r.buckets.Important.length" class="prio-bucket">
+                    <span class="prio-bucket-lbl">重要</span>
+                    <div class="prio-items">
+                      <div v-for="it in r.buckets.Important" :key="it.itemId" class="prio-item">
+                        <img :src="itemIcon(it.itemId)" class="mini-item" :title="itemName(it.itemId) + ' (' + it.necessity.toFixed(2) + ')'" />
+                        <span class="prio-item-nec">{{ it.necessity.toFixed(2) }}</span>
+                      </div>
+                    </div>
+                  </div>
+                  <div v-if="r.buckets.Optional.length" class="prio-bucket">
+                    <span class="prio-bucket-lbl">可选</span>
+                    <div class="prio-items">
+                      <div v-for="it in r.buckets.Optional" :key="it.itemId" class="prio-item">
+                        <img :src="itemIcon(it.itemId)" class="mini-item" :title="itemName(it.itemId) + ' (' + it.necessity.toFixed(2) + ')'" />
+                        <span class="prio-item-nec">{{ it.necessity.toFixed(2) }}</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            <!-- 特殊装备：光明神器 + 纹章 -->
+            <section v-if="specialGroupsVisible" class="board-section">
+              <h3>特殊装备推荐</h3>
+              <div v-if="selectedCompDetail.composition.specialGroups.artifacts.length" class="special-block">
+                <h4 class="special-lbl">神器</h4>
+                <div class="artifact-picks">
+                  <div v-for="g in selectedCompDetail.composition.specialGroups.artifacts" :key="g.unitId" class="artifact-pick">
+                    <div class="artifact-pick-main">
+                      <img :src="unitIcon(g.unitId)" :alt="unitName(g.unitId)" class="mini-unit" />
+                      <span class="artifact-carrier">{{ unitName(g.unitId) }}</span>
+                      <img v-for="it in g.items" :key="it.id" :src="itemIcon(it.id)" class="mini-item" :title="itemName(it.id) + ' 均 ' + it.avgPlacement.toFixed(2)" />
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div v-if="selectedCompDetail.composition.specialGroups.radiants.length" class="special-block">
+                <h4 class="special-lbl">光明装备</h4>
+                <div class="artifact-picks">
+                  <div v-for="g in selectedCompDetail.composition.specialGroups.radiants" :key="g.unitId" class="artifact-pick">
+                    <div class="artifact-pick-main">
+                      <img :src="unitIcon(g.unitId)" :alt="unitName(g.unitId)" class="mini-unit" />
+                      <span class="artifact-carrier">{{ unitName(g.unitId) }}</span>
+                      <img v-for="it in g.items" :key="it.id" :src="itemIcon(it.id)" class="mini-item" :title="itemName(it.id) + ' 均 ' + it.avgPlacement.toFixed(2)" />
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div v-if="selectedCompDetail.composition.specialGroups.emblems.length" class="special-block">
+                <h4 class="special-lbl">纹章</h4>
+                <div class="artifact-picks">
+                  <div v-for="g in selectedCompDetail.composition.specialGroups.emblems" :key="g.itemId" class="artifact-pick">
+                    <div class="artifact-pick-main">
+                      <img :src="itemIcon(g.itemId)" :alt="itemName(g.itemId)" class="mini-item" />
+                      <span class="artifact-name">{{ itemName(g.itemId) }}</span>
+                      <span class="muted tiny">均 {{ g.avgPlacement.toFixed(2) }} · 出现率 {{ (g.appearanceRate * 100).toFixed(1) }}%</span>
+                      <img v-for="c in g.carriers" :key="c.unit_id" :src="unitIcon(c.unit_id)" class="mini-unit" :title="unitName(c.unit_id) + (c.best ? ' ★' : '')" />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            <!-- 互害 / 受益 -->
+            <section v-if="selectedCompDetail.composition.matchups" class="board-section">
+              <h3>克制关系</h3>
+              <div class="matchup-list">
+                <div v-for="b in selectedCompDetail.composition.matchups.benefits" :key="b.key" class="matchup-row good">
+                  <span>受益对阵</span>
+                  <span>{{ compName(b.key) }}</span>
+                  <span class="muted">delta {{ b.delta.toFixed(3) }}</span>
+                </div>
+                <div v-for="c in selectedCompDetail.composition.matchups.counteredBy" :key="c.key" class="matchup-row bad">
+                  <span>被克制</span>
+                  <span>{{ compName(c.key) }}</span>
+                  <span class="muted">delta {{ c.delta.toFixed(3) }}</span>
+                </div>
+                <div v-for="m in selectedCompDetail.composition.matchups.mutualConstraints" :key="m.key" class="matchup-row neutral">
+                  <span>互相挤压</span>
+                  <span>{{ compName(m.key) }}</span>
+                  <span class="muted">delta {{ m.delta.toFixed(3) }}</span>
+                </div>
+                <p v-if="!selectedCompDetail.composition.matchups.benefits.length && !selectedCompDetail.composition.matchups.counteredBy.length && !selectedCompDetail.composition.matchups.mutualConstraints.length" class="empty" style="padding: 8px 0; text-align: left">无克制数据。</p>
+              </div>
+            </section>
+
+            <!-- 神器推荐 -->
+            <section v-if="selectedCompDetail.composition.artifactPicks && selectedCompDetail.composition.artifactPicks.picks.length" class="board-section">
+              <h3>神器推荐</h3>
+              <div class="artifact-picks">
+                <div v-for="p in selectedCompDetail.composition.artifactPicks.picks" :key="p.artifactId" class="artifact-pick">
+                  <div class="artifact-pick-main">
+                    <img :src="tfImg(p.artifactIcon)" :alt="p.artifactName" class="mini-item" />
+                    <span class="artifact-name">{{ p.artifactName }}</span>
+                    <span class="muted tiny">→</span>
+                    <img :src="tfImg(p.carrierIcon)" :alt="p.carrierName" class="mini-unit" />
+                    <span class="artifact-carrier">{{ p.carrierName }}</span>
+                    <span class="muted tiny">强度 {{ p.strength.toFixed(3) }}</span>
+                  </div>
+                  <div v-if="p.topPair" class="artifact-pair">
+                    <img v-for="it in p.topPair.items" :key="it.itemId" :src="tfImg(it.icon)" :alt="it.name" class="mini-item" :title="it.name" />
+                  </div>
+                </div>
+              </div>
+            </section>
+          </div>
+        </template>
+
+        <template v-else>
+          <div v-if="tftData && tftData.compAtlas.compositionSummaries.length" class="comp-grid">
+            <div
+              v-for="c in sortedComps"
+              :key="c.slug"
+              class="comp-card"
+              @click="showCompDetail(c.slug)"
+            >
+              <div class="comp-card-head">
+                <img :src="cardOf(c.slug).compIcon ? tfImg(cardOf(c.slug).compIcon) : unitIcon(compCarryIcon(c.slug))" :alt="cardOf(c.slug).display_name_cn" class="comp-card-icon" />
+                <div class="comp-card-title">
+                  <span class="comp-card-name">{{ cardOf(c.slug).display_name_cn }}</span>
+                  <span class="comp-card-en muted">{{ cardOf(c.slug).display_name_en }}</span>
+                </div>
+                <span class="comp-cost-tag">${{ cardOf(c.slug).compCost }}</span>
+              </div>
+              <div class="comp-card-stats">
+                <div class="comp-card-stat">
+                  <span class="comp-card-val">{{ c.avgPlacementValue.toFixed(2) }}</span>
+                  <span class="comp-card-lbl">平均名次</span>
+                </div>
+                <div class="comp-card-stat">
+                  <span class="comp-card-val">{{ (statOf(c.slug).strength * 100).toFixed(1) }}%</span>
+                  <span class="comp-card-lbl">强度</span>
+                </div>
+                <div class="comp-card-stat">
+                  <span class="comp-card-val">{{ (statOf(c.slug).playRate * 100).toFixed(2) }}%</span>
+                  <span class="comp-card-lbl">出场率</span>
+                </div>
+              </div>
+              <div class="comp-card-delta" :class="{ up: c.trendDelta < 0, down: c.trendDelta > 0 }">
+                {{ c.trendDelta < 0 ? "▲" : (c.trendDelta > 0 ? "▼" : "—") }} 名次变化 {{ Math.abs(c.trendDelta).toFixed(2) }}
+              </div>
+              <div class="comp-card-share">
+                <span class="tiny muted">登顶占比变化 {{ fmtSigned(c.winShareDelta, "%") }}</span>
+                <span class="tiny muted">| 出场变化 {{ fmtSigned(c.playRateDelta, "%") }}</span>
               </div>
             </div>
           </div>
-        </div>
-        <p v-else class="empty">暂无阵容数据，运行 crawl_meta 生成 meta.json 后刷新。</p>
+          <p v-else-if="!metaLoading" class="empty">暂无阵容数据。</p>
+        </template>
       </template>
 
       <!-- Meta 视图 -->
       <template v-else-if="view === 'meta'">
         <header class="topbar">
-          <h2>高分段 Meta</h2>
+          <h2>数据</h2>
           <button @click="getMeta" :disabled="metaLoading">
             {{ metaLoading ? "加载中…" : "刷新" }}
           </button>
         </header>
-        <div class="odds-note">数据来源：国际服王者/宗师/大师段位（跨服通用）。</div>
         <p v-if="lastSync" class="hint" style="margin: 0 0 8px">{{ lastSync }}</p>
-
+        <p v-if="tftData" class="hint" style="margin: 0 0 8px; font-size:11px; color:var(--faint)">更新时间: {{ new Date(tftData.timestamp).toLocaleString("zh-CN") }}</p>
         <p v-if="error" class="error">{{ error }}</p>
 
-        <template v-if="metaData">
+        <template v-if="tftData">
           <div class="tabs tabs-group">
-            <span class="tabs-group-label">环境</span>
+            <span class="tabs-group-label">数据</span>
             <button
               v-for="t in [
-                { key: 'comps', label: '环境总览' },
-                { key: 'trend', label: '阵容趋势' },
-                { key: 'daily', label: '每日统计' },
-              ]"
-              :key="t.key"
-              class="tab"
-              :class="{ active: metaTab === t.key }"
-              @click="metaTab = t.key as any"
-            >
-              {{ t.label }}
-            </button>
-          </div>
-          <div class="tabs tabs-group">
-            <span class="tabs-group-label">装备</span>
-            <button
-              v-for="t in [
-                { key: 'items', label: '神器纹章' },
-                { key: 'heroes', label: '按弈子' },
-                { key: 'item_heroes', label: '按装备' },
+                { key: 'overview', label: 'Meta总览' },
+                { key: 'trends', label: '阵容趋势' },
+                { key: 'daily', label: '每日数据' },
+                { key: 'tierlist', label: '装备梯队' },
+                { key: 'unitItems', label: '按弈子' },
+                { key: 'itemGuide', label: '按装备' },
               ]"
               :key="t.key"
               class="tab"
@@ -1310,274 +1723,542 @@ onMounted(async () => {
             </button>
           </div>
 
-          <!-- 阵容详情 -->
-          <template v-if="selectedComp">
-            <div class="comp-detail">
-              <header class="topbar">
-                <button class="ghost" @click="closeCompDetail">← 返回</button>
-                <h2 class="detail-title">
-                  <img v-if="selectedComp.icon_url" :src="selectedComp.icon_url" :alt="selectedComp.name" class="top-icon" />
-                  {{ selectedComp.name }}
-                </h2>
-                <span class="muted">{{ selectedComp.appearances }} 局</span>
-              </header>
-
-              <div class="comp-stat-cards">
-                <div class="stat-card">
-                  <div class="stat-value">{{ (selectedComp.win_rate * 100).toFixed(1) }}%</div>
-                  <div class="stat-label">吃鸡率</div>
-                </div>
-                <div class="stat-card">
-                  <div class="stat-value">{{ (selectedComp.top4_rate * 100).toFixed(1) }}%</div>
-                  <div class="stat-label">前四率</div>
-                </div>
-                <div class="stat-card">
-                  <div class="stat-value">{{ selectedComp.avg_placement.toFixed(2) }}</div>
-                  <div class="stat-label">平均名次</div>
-                </div>
-              </div>
-
-              <section class="board-section">
-                <h3>阵容构成</h3>
-                <div class="board">
-                  <div
-                    v-for="u in selectedComp.units"
-                    :key="u.id"
-                    class="unit-card"
-                    :style="{ opacity: 0.35 + u.rate }"
-                  >
-                    <div class="unit-icon-wrap">
-                      <img v-if="u.icon_url" :src="u.icon_url" :alt="u.name" class="unit-icon" />
-                      <div v-if="u.avg_tier" class="stars">
-                        {{ "★".repeat(Math.max(1, Math.round(u.avg_tier))) }}
-                      </div>
-                    </div>
-                    <div class="unit-name">{{ u.name || u.id }}</div>
-                    <div class="unit-sub">{{ (u.rate * 100).toFixed(0) }}% · {{ u.count }} 局</div>
-                    <div class="unit-items">
-                      <div v-for="it in u.items.slice(0, 3)" :key="it.id" class="item" :title="it.name">
-                        <img v-if="it.icon_url" :src="it.icon_url" :alt="it.name" />
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </section>
-
-              <section class="board-section">
-                <h3>常见羁绊</h3>
-                <div class="traits">
-                  <div v-for="t in selectedComp.traits" :key="t.id" class="trait">
-                    <span class="trait-name">{{ t.name || t.id }}</span>
-                    <span class="trait-tier">{{ t.count }} 局</span>
-                  </div>
-                </div>
-              </section>
-
-              <section class="board-section">
-                <h3>互害 / 受益</h3>
-                <div v-if="compCounters.length > 0" class="counter-list">
-                  <div class="meta-row meta-head">
-                    <span class="meta-name">对阵阵容</span>
-                    <span class="meta-num">同场局</span>
-                    <span class="meta-num">本阵容均名次</span>
-                    <span class="meta-num">吃鸡率</span>
-                  </div>
-                  <div v-for="c in compCounters" :key="c.b_id" class="meta-row">
-                    <span class="meta-name">
-                      <span class="counter-name">{{ c.b_name }}</span>
-                      <span class="counter-delta" :class="{ bad: c.a_avg_placement >= 4.5 }">
-                        {{ Math.round(c.a_avg_placement) >= 5 ? "克制" : (c.a_avg_placement <= 3.5 ? "被克" : "") }}
-                      </span>
-                    </span>
-                    <span class="meta-num">{{ c.appearances }}</span>
-                    <span class="meta-num">{{ c.a_avg_placement.toFixed(2) }}</span>
-                    <span class="meta-num accent">{{ (c.a_win_rate * 100).toFixed(0) }}%</span>
-                  </div>
-                </div>
-                <p v-else class="empty" style="padding: 12px 0; text-align: left">
-                  样本不足，暂未统计互害数据。
-                </p>
-              </section>
-            </div>
-          </template>
-
-          <!-- 环境总览：指数 + 费用分布 + 具名阵容占比榜 -->
-          <div v-if="metaTab === 'comps'" class="env-overview">
-            <!-- 指数卡 -->
+          <!-- Meta 总览 -->
+          <div v-if="metaTab === 'overview'">
             <div class="comp-stat-cards">
               <div class="stat-card">
-                <div class="stat-value">{{ (concentration * 100).toFixed(1) }}</div>
+                <div class="stat-value">{{ (tftData.metaStats.balance.involution_index * 100).toFixed(1) }}</div>
                 <div class="stat-label">内卷指数</div>
               </div>
               <div class="stat-card">
-                <div class="stat-value">{{ (diversity * 100).toFixed(1) }}</div>
+                <div class="stat-value">{{ (tftData.metaStats.balance.diversity_index * 100).toFixed(1) }}</div>
                 <div class="stat-label">多样性指数</div>
               </div>
               <div class="stat-card">
-                <div class="stat-value">{{ metaData.sample_count }}</div>
+                <div class="stat-value">{{ tftData.sampleSize.toLocaleString() }}</div>
                 <div class="stat-label">样本对局</div>
               </div>
+              <div class="stat-card">
+                <div class="stat-value">{{ tftData.patch }}</div>
+                <div class="stat-label">版本</div>
+              </div>
             </div>
 
-            <!-- 费用分布 -->
+            <!-- 方法论说明（对应网站 Show details） -->
             <section class="board-section">
-              <h3>登顶费用分布</h3>
-              <div class="cost-bars">
-                <div v-for="(v, i) in metaData.cost_win" :key="'w' + i" class="cost-bar-row">
-                  <span class="cost-bar-label" :style="{ color: costColors[i] }">{{ i + 1 }}费</span>
-                  <div class="cost-bar-bg">
-                    <div class="cost-bar" :style="{ width: (v * 100) + '%', background: costColors[i] }"></div>
-                  </div>
-                  <span class="cost-bar-val">{{ (v * 100).toFixed(1) }}%</span>
-                </div>
+              <button class="ghost small" @click="showDetails = !showDetails">
+                {{ showDetails ? "收起方法论说明 ▲" : "指数计算方法说明 ▼" }}
+              </button>
+              <div v-if="showDetails" class="notes-block">
+                <p class="note-line"><b>内卷指数：</b>{{ tftData.metaStats.balance.notes.involution }}</p>
+                <p class="note-line"><b>多样性指数：</b>{{ tftData.metaStats.balance.notes.diversity }}</p>
               </div>
             </section>
 
+            <!-- 每日内卷/多样性趋势 -->
             <section class="board-section">
-              <h3>前四费用分布</h3>
-              <div class="cost-bars">
-                <div v-for="(v, i) in metaData.cost_top4" :key="'t' + i" class="cost-bar-row">
-                  <span class="cost-bar-label" :style="{ color: costColors[i] }">{{ i + 1 }}费</span>
-                  <div class="cost-bar-bg">
-                    <div class="cost-bar" :style="{ width: (v * 100) + '%', background: costColors[i] }"></div>
-                  </div>
-                  <span class="cost-bar-val">{{ (v * 100).toFixed(1) }}%</span>
-                </div>
+              <h3>环境指数趋势（近 6 日）</h3>
+              <div class="trend-legend">
+                <span class="trend-legend-item"><span class="trend-legend-dot" style="background:#f0716f"></span>内卷指数</span>
+                <span class="trend-legend-item"><span class="trend-legend-dot" style="background:#45d483"></span>多样性指数</span>
               </div>
-            </section>
-
-            <!-- 具名阵容登顶占比榜 -->
-            <section class="board-section">
-              <h3>登顶占比 · 阵容</h3>
-              <div v-if="metaData.named_comps.length" class="meta-list">
-                <div class="meta-row meta-head">
-                  <span class="meta-rank">#</span>
-                  <span class="meta-name">阵容</span>
-                  <span class="meta-num">场次</span>
-                  <span class="meta-num">登顶占比</span>
-                  <span class="meta-num">前四占比</span>
-                </div>
-                <div
-                  v-for="(c, i) in metaData.named_comps"
-                  :key="c.id"
-                  class="meta-row comp-row"
-                  @click="showNamedComp(c.id)"
-                >
-                  <span class="meta-rank" :class="{ top3: i < 3 }">{{ i + 1 }}</span>
-                  <span class="meta-name">
-                    <img v-if="c.icon_url" :src="c.icon_url" :alt="c.carry_name" class="top-icon" />
-                    {{ c.name }}
-                    <span class="comp-sub">{{ c.primary_name }} · {{ c.carry_name }}</span>
-                  </span>
-                  <span class="meta-num">{{ c.appearances }}</span>
-                  <span class="meta-num accent">{{ (c.win_share * 100).toFixed(2) }}%</span>
-                  <span class="meta-num accent green">{{ (c.top4_share * 100).toFixed(2) }}%</span>
-                </div>
-              </div>
-              <p v-else class="empty">暂无数据</p>
-            </section>
-          </div>
-
-          <!-- 装备榜 -->
-          <div v-if="metaTab === 'items' && metaData.items.length > 0" class="meta-list">
-            <div class="meta-row meta-head">
-              <span class="meta-rank">#</span>
-              <span class="meta-name">装备</span>
-              <span class="meta-num">出现</span>
-              <span class="meta-num">吃鸡率</span>
-              <span class="meta-num">前四率</span>
-            </div>
-            <div v-for="(it, i) in metaData.items" :key="it.id" class="meta-row">
-              <span class="meta-rank" :class="{ top3: i < 3 }">{{ i + 1 }}</span>
-              <span class="meta-name">
-                <img v-if="it.icon_url" :src="it.icon_url" :alt="it.name" class="top-icon" />
-                {{ it.name }}
-              </span>
-              <span class="meta-num">{{ it.appearances }}</span>
-              <span class="meta-num accent">{{ (it.win_rate * 100).toFixed(1) }}%</span>
-              <span class="meta-num accent green">{{ (it.top4_rate * 100).toFixed(1) }}%</span>
-            </div>
-          </div>
-
-          <!-- 按弈子 -->
-          <div v-if="metaTab === 'heroes' && metaData.hero_items.length > 0" class="hero-item-list">
-            <div v-for="h in metaData.hero_items" :key="h.id" class="hero-item-card">
-              <div class="champ-head">
-                <img v-if="h.icon_url" :src="h.icon_url" :alt="h.name" class="champ-icon" />
-                <span class="champ-name">{{ h.name || h.id }}</span>
-              </div>
-              <div class="hero-item-row" v-for="it in h.items" :key="it.id">
-                <img v-if="it.icon_url" :src="it.icon_url" :alt="it.name" class="top-icon" />
-                <span class="top-name">{{ it.name || it.id }}</span>
-                <span class="meta-num">{{ it.appearances }}</span>
-                <span class="meta-num accent green">{{ (it.top4_rate * 100).toFixed(1) }}%</span>
-              </div>
-            </div>
-          </div>
-
-          <!-- 按装备：反查每件装备适合哪些弈子 -->
-          <div v-if="metaTab === 'item_heroes'" class="hero-item-list">
-            <div v-for="g in itemHeroGroups" :key="g.itemId" class="hero-item-card">
-              <div class="champ-head">
-                <img v-if="g.itemIcon" :src="g.itemIcon" :alt="g.itemName" class="champ-icon" />
-                <span class="champ-name">{{ g.itemName || g.itemId }}</span>
-              </div>
-              <div class="hero-item-row" v-for="h in g.heroes.slice(0, 6)" :key="h.id">
-                <img v-if="h.icon_url" :src="h.icon_url" :alt="h.name" class="top-icon" />
-                <span class="top-name">{{ h.name || h.id }}</span>
-                <span class="meta-num">{{ h.appearances }}</span>
-                <span class="meta-num accent green">{{ (h.top4_rate * 100).toFixed(1) }}%</span>
-              </div>
-            </div>
-          </div>
-
-          <!-- 每日统计 -->
-          <div v-if="metaTab === 'daily' && metaData.daily.length > 0" class="daily-list">
-            <div v-for="d in metaData.daily" :key="d.date" class="daily-card">
-              <div class="champ-head">
-                <span class="champ-name">{{ d.date }}</span>
-                <span class="muted">{{ d.comps.length }} 阵容</span>
-              </div>
-              <div class="daily-row" v-for="(c, i) in d.comps.slice(0, 8)" :key="c.id">
-                <span class="meta-rank" :class="{ top3: i < 3 }">{{ i + 1 }}</span>
-                <span class="meta-name">
-                  <img v-if="c.icon_url" :src="c.icon_url" :alt="c.name" class="top-icon" />
-                  {{ c.name }}
-                </span>
-                <span class="meta-num">{{ c.appearances }}</span>
-                <span class="meta-num accent">{{ (c.win_share * 100).toFixed(1) }}%</span>
-              </div>
-            </div>
-          </div>
-          <div v-else-if="metaTab === 'daily' && !metaLoading" class="empty">暂无每日数据。</div>
-
-          <!-- 阵容趋势：跨日占比变化 -->
-          <div v-if="metaTab === 'trend' && metaData.daily.length > 0" class="trend-chart-wrap">
-            <div class="trend-legend">
-              <span v-for="(name, i) in trendTopNames" :key="i" class="trend-legend-item">
-                <span class="trend-legend-dot" :style="{ background: trendColors[i % trendColors.length] }"></span>
-                {{ name }}
-              </span>
-            </div>
-            <svg class="trend-svg" :viewBox="'0 0 ' + trendDates.length * 80 + ' 200'" preserveAspectRatio="xMidYMid meet">
-              <line v-for="n in 5" :key="'g'+n" :x1="0" :y1="n*40" :x2="trendDates.length*80" :y2="n*40" stroke="#2a2a3a" stroke-width="0.5"/>
-              <text v-for="(name, i) in trendTopNames" :key="'l'+i" x="4" :y="205" fill="#888" font-size="11">{{ name.slice(0, 4) }}</text>
-              <g v-for="(line, i) in trendLines" :key="i">
+              <svg class="trend-svg" viewBox="0 0 640 220" preserveAspectRatio="xMidYMid meet">
+                <line v-for="n in 5" :key="'b'+n" x1="0" :y1="n*40" x2="640" :y2="n*40" stroke="#2a2a3a" stroke-width="0.5"/>
                 <polyline
-                  :points="line.map((v, j) => j * 80 + ',' + (200 - v * 400)).join(' ')"
-                  :stroke="trendColors[i % trendColors.length]"
+                  :points="balanceTrendLines[0]"
+                  stroke="#f0716f"
                   stroke-width="2"
                   fill="none"
                 />
-              </g>
-            </svg>
+                <polyline
+                  :points="balanceTrendLines[1]"
+                  stroke="#45d483"
+                  stroke-width="2"
+                  fill="none"
+                />
+              </svg>
+            </section>
+
+            <div class="two-col">
+              <section class="board-section">
+                <h3>登顶费用分布（Win Share）</h3>
+                <div class="cost-bars">
+                  <div v-for="(v, i) in costShareArr(tftData.metaStats.core_cost_share.win_share)" :key="'w' + i" class="cost-bar-row">
+                    <span class="cost-bar-label" :style="{ color: costColors[i] }">{{ i + 1 }}费</span>
+                    <div class="cost-bar-bg">
+                      <div class="cost-bar" :style="{ width: (v * 100) + '%', background: costColors[i] }"></div>
+                    </div>
+                    <span class="cost-bar-val">{{ (v * 100).toFixed(1) }}%</span>
+                  </div>
+                </div>
+              </section>
+              <section class="board-section">
+                <h3>前四费用分布（Top4 Share）</h3>
+                <div class="cost-bars">
+                  <div v-for="(v, i) in costShareArr(tftData.metaStats.core_cost_share.top4_share)" :key="'t' + i" class="cost-bar-row">
+                    <span class="cost-bar-label" :style="{ color: costColors[i] }">{{ i + 1 }}费</span>
+                    <div class="cost-bar-bg">
+                      <div class="cost-bar" :style="{ width: (v * 100) + '%', background: costColors[i] }"></div>
+                    </div>
+                    <span class="cost-bar-val">{{ (v * 100).toFixed(1) }}%</span>
+                  </div>
+                </div>
+              </section>
+            </div>
+
+            <div class="two-col">
+              <section class="board-section">
+                <h3>登顶占比 · 阵容（Win Share · 样本 {{ tftData.metaStats.winShare.sample_size.toLocaleString() }}）</h3>
+                <div class="meta-list">
+                  <div class="meta-row meta-head">
+                    <span class="meta-rank">#</span>
+                    <span class="meta-name">阵容</span>
+                    <span class="meta-num">登顶</span>
+                    <span class="meta-num">占比</span>
+                  </div>
+                  <div
+                    v-for="(c, i) in winShareComps"
+                    :key="c.slug"
+                    class="meta-row comp-row"
+                    @click="showCompDetail(c.slug)"
+                  >
+                    <span class="meta-rank" :class="{ top3: i < 3 }">{{ i + 1 }}</span>
+                    <span class="meta-name">
+                      <img :src="compCardIcon(c.slug)" :alt="compName(c.slug)" class="top-icon" />
+                      {{ compName(c.slug) }}
+                    </span>
+                    <span class="meta-num">{{ c.wins }}</span>
+                    <span class="meta-num accent">{{ ((c.wins / tftData.metaStats.winShare.sample_size) * 100).toFixed(2) }}%</span>
+                  </div>
+                </div>
+              </section>
+              <section class="board-section">
+                <h3>前四占比 · 阵容（Top4 Share · 样本 {{ tftData.metaStats.top4Share.sample_size.toLocaleString() }}）</h3>
+                <div class="meta-list">
+                  <div class="meta-row meta-head">
+                    <span class="meta-rank">#</span>
+                    <span class="meta-name">阵容</span>
+                    <span class="meta-num">前四</span>
+                    <span class="meta-num">占比</span>
+                  </div>
+                  <div
+                    v-for="(c, i) in top4ShareComps"
+                    :key="c.slug"
+                    class="meta-row comp-row"
+                    @click="showCompDetail(c.slug)"
+                  >
+                    <span class="meta-rank" :class="{ top3: i < 3 }">{{ i + 1 }}</span>
+                    <span class="meta-name">
+                      <img :src="compCardIcon(c.slug)" :alt="compName(c.slug)" class="top-icon" />
+                      {{ compName(c.slug) }}
+                    </span>
+                    <span class="meta-num">{{ c.wins }}</span>
+                    <span class="meta-num accent">{{ ((c.wins / tftData.metaStats.top4Share.sample_size) * 100).toFixed(2) }}%</span>
+                  </div>
+                </div>
+              </section>
+            </div>
+
+            <!-- 阵容强度趋势 -->
+            <section class="board-section">
+              <h3>阵容强度趋势（近 6 日）</h3>
+              <div class="trend-legend">
+                <span v-for="(name, i) in trendTopNames" :key="i" class="trend-legend-item">
+                  <span class="trend-legend-dot" :style="{ background: trendColors[i % trendColors.length] }"></span>
+                  {{ name }}
+                </span>
+              </div>
+              <svg class="trend-svg" viewBox="0 0 640 220" preserveAspectRatio="xMidYMid meet">
+                <line v-for="n in 5" :key="'g'+n" x1="0" :y1="n*40" x2="640" :y2="n*40" stroke="#2a2a3a" stroke-width="0.5"/>
+                <g v-for="(line, i) in trendLines" :key="i">
+                  <polyline
+                    :points="line.map((v, j) => (40 + j * ((600) / Math.max(1, trendDates.length - 1))) + ',' + (205 - v * 180)).join(' ')"
+                    :stroke="trendColors[i % trendColors.length]"
+                    stroke-width="2"
+                    fill="none"
+                  />
+                </g>
+              </svg>
+            </section>
+
+            <div class="two-col">
+              <section class="board-section">
+                <h3>登顶占比 · 羁绊（Win Share）</h3>
+                <div class="meta-list">
+                  <div class="meta-row meta-head">
+                    <span class="meta-rank">#</span>
+                    <span class="meta-name">羁绊</span>
+                    <span class="meta-num">层级</span>
+                    <span class="meta-num">占比</span>
+                  </div>
+                  <div
+                    v-for="(t, i) in tftData.metaStats.winShare.traits.slice(0, 15)"
+                    :key="t.trait_id"
+                    class="meta-row"
+                  >
+                    <span class="meta-rank" :class="{ top3: i < 3 }">{{ i + 1 }}</span>
+                    <span class="meta-name">
+                      <img :src="traitIcon(t.trait_id)" :alt="t.trait_name_cn" class="top-icon" />
+                      {{ t.trait_name_cn }}
+                      <span class="muted tiny">{{ t.trait_name_en }}</span>
+                    </span>
+                    <span class="meta-num">{{ t.tier != null ? ('T' + t.tier) : '—' }}</span>
+                    <span class="meta-num accent">{{ ((t.wins / tftData.metaStats.winShare.sample_size) * 100).toFixed(2) }}%</span>
+                  </div>
+                </div>
+              </section>
+              <section class="board-section">
+                <h3>前四占比 · 羁绊（Top4 Share）</h3>
+                <div class="meta-list">
+                  <div class="meta-row meta-head">
+                    <span class="meta-rank">#</span>
+                    <span class="meta-name">羁绊</span>
+                    <span class="meta-num">层级</span>
+                    <span class="meta-num">占比</span>
+                  </div>
+                  <div
+                    v-for="(t, i) in tftData.metaStats.top4Share.traits.slice(0, 15)"
+                    :key="t.trait_id"
+                    class="meta-row"
+                  >
+                    <span class="meta-rank" :class="{ top3: i < 3 }">{{ i + 1 }}</span>
+                    <span class="meta-name">
+                      <img :src="traitIcon(t.trait_id)" :alt="t.trait_name_cn" class="top-icon" />
+                      {{ t.trait_name_cn }}
+                      <span class="muted tiny">{{ t.trait_name_en }}</span>
+                    </span>
+                    <span class="meta-num">{{ t.tier != null ? ('T' + t.tier) : '—' }}</span>
+                    <span class="meta-num accent">{{ ((t.wins / tftData.metaStats.top4Share.sample_size) * 100).toFixed(2) }}%</span>
+                  </div>
+                </div>
+              </section>
+            </div>
           </div>
-          <div v-else-if="metaTab === 'trend' && !metaLoading" class="empty">暂无趋势数据。</div>
+
+          <!-- 阵容趋势 -->
+          <div v-if="metaTab === 'trends'">
+            <section class="board-section">
+              <h3>阵容 AVP 完整表格（当前补丁）</h3>
+              <div class="meta-list">
+                <div class="meta-row meta-head">
+                  <span class="meta-rank">#</span>
+                  <span class="meta-name">阵容</span>
+                  <span class="meta-num">当前补丁 AVP</span>
+                  <span class="meta-num">Pick Rate</span>
+                  <span class="meta-num">± 名次</span>
+                  <span class="meta-num">± 出场率</span>
+                </div>
+                <div
+                  v-for="(c, i) in sortedTrendRows"
+                  :key="c.slug"
+                  class="meta-row comp-row"
+                  @click="showCompDetail(c.slug)"
+                >
+                  <span class="meta-rank" :class="{ top3: i < 3 }">{{ i + 1 }}</span>
+                  <span class="meta-name">
+                    <img :src="compCardIcon(c.slug)" :alt="compName(c.slug)" class="top-icon" />
+                    {{ compName(c.slug) }}
+                  </span>
+                  <span class="meta-num">{{ c.avgPlacement }}</span>
+                  <span class="meta-num">{{ c.playRate }}</span>
+                  <span class="meta-num" :class="c.versionDeltaAvg ? (c.versionDeltaAvg.positive ? 'accent green' : 'accent bad') : ''">{{ c.versionDeltaAvg?.text ?? '—' }}</span>
+                  <span class="meta-num" :class="c.versionDeltaPlay ? (c.versionDeltaPlay.positive ? 'accent green' : 'accent bad') : ''">{{ c.versionDeltaPlay?.text ?? '—' }}</span>
+                </div>
+              </div>
+            </section>
+            <section class="board-section">
+              <h3>平均名次变化 · 上升</h3>
+              <div class="meta-list">
+                <div class="meta-row meta-head">
+                  <span class="meta-rank">#</span>
+                  <span class="meta-name">阵容</span>
+                  <span class="meta-num">均名次</span>
+                  <span class="meta-num">变化</span>
+                  <span class="meta-num">出场率</span>
+                </div>
+                <div v-for="(c, i) in tftData.trends.compositionTrendUp" :key="c.slug" class="meta-row comp-row" @click="showCompDetail(c.slug)">
+                  <span class="meta-rank" :class="{ top3: i < 3 }">{{ i + 1 }}</span>
+                  <span class="meta-name">
+                    <img :src="compCardIcon(c.slug)" :alt="compName(c.slug)" class="top-icon" />
+                    {{ compName(c.slug) }}
+                  </span>
+                  <span class="meta-num">{{ c.avgPlacement }}</span>
+                  <span class="meta-num accent green">{{ c.avgPlacementDelta?.text }}</span>
+                  <span class="meta-num">{{ c.playRate }}</span>
+                </div>
+              </div>
+            </section>
+            <section class="board-section">
+              <h3>平均名次变化 · 下降</h3>
+              <div class="meta-list">
+                <div class="meta-row meta-head">
+                  <span class="meta-rank">#</span>
+                  <span class="meta-name">阵容</span>
+                  <span class="meta-num">均名次</span>
+                  <span class="meta-num">变化</span>
+                  <span class="meta-num">出场率</span>
+                </div>
+                <div v-for="(c, i) in tftData.trends.compositionTrendDown" :key="c.slug" class="meta-row comp-row" @click="showCompDetail(c.slug)">
+                  <span class="meta-rank">{{ i + 1 }}</span>
+                  <span class="meta-name">
+                    <img :src="compCardIcon(c.slug)" :alt="compName(c.slug)" class="top-icon" />
+                    {{ compName(c.slug) }}
+                  </span>
+                  <span class="meta-num">{{ c.avgPlacement }}</span>
+                  <span class="meta-num accent bad">{{ c.avgPlacementDelta?.text }}</span>
+                  <span class="meta-num">{{ c.playRate }}</span>
+                </div>
+              </div>
+            </section>
+            <section class="board-section">
+              <h3>登顶占比变化 · 上升</h3>
+              <div class="meta-list">
+                <div class="meta-row meta-head">
+                  <span class="meta-rank">#</span>
+                  <span class="meta-name">阵容</span>
+                  <span class="meta-num">登顶</span>
+                  <span class="meta-num">前四</span>
+                  <span class="meta-num">±登顶</span>
+                  <span class="meta-num">±前四</span>
+                </div>
+                <div v-for="(c, i) in tftData.trends.winshareTrendUp" :key="c.slug" class="meta-row comp-row" @click="showCompDetail(c.slug)">
+                  <span class="meta-rank" :class="{ top3: i < 3 }">{{ i + 1 }}</span>
+                  <span class="meta-name">
+                    <img :src="compCardIcon(c.slug)" :alt="compName(c.slug)" class="top-icon" />
+                    {{ compName(c.slug) }}
+                  </span>
+                  <span class="meta-num accent">{{ c.winShare }}</span>
+                  <span class="meta-num accent">{{ c.top4Share }}</span>
+                  <span class="meta-num accent green">{{ c.winShareDelta?.text }}</span>
+                  <span class="meta-num accent green">{{ c.top4ShareDelta?.text }}</span>
+                </div>
+              </div>
+            </section>
+            <section class="board-section">
+              <h3>登顶占比变化 · 下降</h3>
+              <div class="meta-list">
+                <div class="meta-row meta-head">
+                  <span class="meta-rank">#</span>
+                  <span class="meta-name">阵容</span>
+                  <span class="meta-num">登顶</span>
+                  <span class="meta-num">前四</span>
+                  <span class="meta-num">±登顶</span>
+                  <span class="meta-num">±前四</span>
+                </div>
+                <div v-for="(c, i) in tftData.trends.winshareTrendDown" :key="c.slug" class="meta-row comp-row" @click="showCompDetail(c.slug)">
+                  <span class="meta-rank">{{ i + 1 }}</span>
+                  <span class="meta-name">
+                    <img :src="compCardIcon(c.slug)" :alt="compName(c.slug)" class="top-icon" />
+                    {{ compName(c.slug) }}
+                  </span>
+                  <span class="meta-num accent">{{ c.winShare }}</span>
+                  <span class="meta-num accent">{{ c.top4Share }}</span>
+                  <span class="meta-num accent bad">{{ c.winShareDelta?.text }}</span>
+                  <span class="meta-num accent bad">{{ c.top4ShareDelta?.text }}</span>
+                </div>
+              </div>
+            </section>
+          </div>
+
+          <!-- 每日数据 -->
+          <div v-if="metaTab === 'daily'">
+            <div class="tabs tabs-group">
+              <span class="tabs-group-label">模式</span>
+              <button
+                v-for="t in [{ key: 'playRate', label: '24h 出场率' }, { key: 'avp', label: '24h 均名次' }, { key: 'patch', label: '补丁变化' }]"
+                :key="t.key"
+                class="tab"
+                :class="{ active: dailyMode === t.key }"
+                @click="dailyMode = t.key as any"
+              >
+                {{ t.label }}
+              </button>
+            </div>
+            <section class="board-section">
+              <h3>每日数据（{{ tftData.dailyStats.versionDeltaWindowHint }}）</h3>
+              <div class="meta-list">
+                <div class="meta-row meta-head">
+                  <span class="meta-name">阵容</span>
+                  <span class="meta-num" v-if="dailyMode === 'playRate'">出场率</span>
+                  <span class="meta-num" v-if="dailyMode === 'playRate'">版本变化</span>
+                  <span class="meta-num" v-if="dailyMode === 'avp'">均名次</span>
+                  <span class="meta-num" v-if="dailyMode === 'avp'">名次变化</span>
+                  <span class="meta-num" v-if="dailyMode === 'patch'">AVP</span>
+                  <span class="meta-num" v-if="dailyMode === 'patch'">出场率</span>
+                  <span class="meta-num" v-for="d in tftData.dailyStats.dateColumns" :key="d">{{ d }}</span>
+                </div>
+                <div v-for="c in tftData.dailyStats.compositionRows" :key="c.slug" class="meta-row comp-row" @click="showCompDetail(c.slug)">
+                  <span class="meta-name">
+                    <img :src="compCardIcon(c.slug)" :alt="compName(c.slug)" class="top-icon" />
+                    {{ compName(c.slug) }}
+                  </span>
+                  <span class="meta-num" v-if="dailyMode === 'playRate'">{{ c.playRate }}</span>
+                  <span class="meta-num" v-if="dailyMode === 'playRate'" :class="c.versionDeltaPlay ? (c.versionDeltaPlay.positive ? 'accent green' : 'accent bad') : ''">{{ c.versionDeltaPlay?.text }}</span>
+                  <span class="meta-num" v-if="dailyMode === 'avp'">{{ c.avgPlacement }}</span>
+                  <span class="meta-num" v-if="dailyMode === 'avp'" :class="c.versionDeltaAvg ? (c.versionDeltaAvg.positive ? 'accent green' : 'accent bad') : ''">{{ c.versionDeltaAvg?.text }}</span>
+                  <span class="meta-num" v-if="dailyMode === 'patch'">{{ c.avgPlacement }}</span>
+                  <span class="meta-num" v-if="dailyMode === 'patch'">{{ c.playRate }}</span>
+                  <span v-for="(m, mi) in c.dateMetrics" :key="mi" class="meta-num">
+                    {{ m.avgPlacement }}
+                  </span>
+                </div>
+              </div>
+            </section>
+          </div>
+
+          <!-- 装备梯队 -->
+          <div v-if="metaTab === 'tierlist'">
+            <div class="tabs tabs-group">
+              <span class="tabs-group-label">梯队</span>
+              <button class="tab" :class="{ active: tierlistTab === 'artifacts' }" @click="tierlistTab = 'artifacts'">神器</button>
+              <button class="tab" :class="{ active: tierlistTab === 'emblems' }" @click="tierlistTab = 'emblems'">纹章</button>
+            </div>
+            <div class="tierlist-meta">
+              <span class="tiny muted">数据范围: 168小时 · 样本≥50 · 段位 Diamond+ · 更新 {{ tftData.itemTierlist.generated_at ? new Date(tftData.itemTierlist.generated_at).toLocaleString("zh-CN") : "—" }}</span>
+            </div>
+
+            <section v-if="tierlistTab === 'artifacts'" class="board-section">
+              <h3>神器梯队（按强度）</h3>
+              <div class="tierlist-list">
+                <div v-for="r in tftData.itemTierlist.tabs.artifacts.rows" :key="r.artifact_id" class="tierlist-row">
+                  <div class="tierlist-item">
+                    <img :src="itemIcon(r.artifact_id)" :alt="r.artifact_id" class="mini-item" />
+                    <span class="tierlist-name">{{ itemName(r.artifact_id) }}</span>
+                  </div>
+                  <div class="tierlist-comps">
+                    <div v-for="cc in r.comps" :key="cc.comp_id" class="tierlist-comp" @click="showCompDetail(cc.comp_id)">
+                      <img :src="compCardIcon(cc.comp_id)" :alt="compName(cc.comp_id)" class="mini-unit" />
+                      <span class="tierlist-comp-name">{{ compName(cc.comp_id) }}</span>
+                      <span class="tierlist-comp-strength">{{ cc.item_strength.toFixed(2) }}</span>
+                      <img v-if="cc.top_pair" v-for="it in cc.top_pair.item_ids" :key="it" :src="itemIcon(it)" class="mini-item" :title="itemName(it)" />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            <section v-if="tierlistTab === 'emblems'" class="board-section">
+              <h3>纹章梯队（按强度）</h3>
+              <div class="tierlist-list">
+                <div v-for="r in tftData.itemTierlist.tabs.emblems.rows" :key="r.artifact_id" class="tierlist-row">
+                  <div class="tierlist-item">
+                    <img :src="itemIcon(r.artifact_id)" :alt="r.artifact_id" class="mini-item" />
+                    <span class="tierlist-name">{{ itemName(r.artifact_id) }}</span>
+                  </div>
+                  <div class="tierlist-comps">
+                    <div v-for="cc in r.comps" :key="cc.comp_id" class="tierlist-comp" @click="showCompDetail(cc.comp_id)">
+                      <img :src="compCardIcon(cc.comp_id)" :alt="compName(cc.comp_id)" class="mini-unit" />
+                      <span class="tierlist-comp-name">{{ compName(cc.comp_id) }}</span>
+                      <span class="tierlist-comp-strength">{{ cc.item_strength.toFixed(2) }}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div v-if="tftData.itemTierlist.tabs.emblems.essentials?.length" class="tierlist-essentials">
+                <h4 class="special-lbl">必需纹章（Essentials）</h4>
+                <div class="tierlist-list">
+                  <div v-for="e in tftData.itemTierlist.tabs.emblems.essentials" :key="e.artifact_id" class="tierlist-row essentials">
+                    <div class="tierlist-item">
+                      <img :src="itemIcon(e.artifact_id)" :alt="e.artifact_id" class="mini-item" />
+                      <span class="tierlist-name">{{ itemName(e.artifact_id) }}</span>
+                    </div>
+                    <div class="tierlist-comps">
+                      <div v-for="cc in e.comps" :key="cc.comp_id" class="tierlist-comp" @click="showCompDetail(cc.comp_id)">
+                        <img :src="compCardIcon(cc.comp_id)" :alt="compName(cc.comp_id)" class="mini-unit" />
+                        <span class="tierlist-comp-name">{{ compName(cc.comp_id) }}</span>
+                        <span class="tierlist-comp-strength">{{ cc.item_strength.toFixed(4) }}</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </section>
+          </div>
+
+          <!-- 按弈子 -->
+          <div v-if="metaTab === 'unitItems'">
+            <section class="board-section">
+              <h3>按弈子 · 最佳出装</h3>
+              <div class="unit-item-list">
+                <div v-for="u in tftData.unitItems" :key="u.unitId" class="unit-item-card">
+                  <div class="champ-head">
+                    <img :src="unitIcon(u.unitId)" :alt="unitName(u.unitId)" class="champ-icon" />
+                    <span class="champ-name">{{ unitName(u.unitId) }}</span>
+                    <span class="muted tiny" style="font-size:10px">{{ unitNameEn(u.unitId) }}</span>
+                    <span class="muted tiny">${{ u.unitCost }}</span>
+                    <span v-if="u.unitPriority != null" class="muted tiny" style="margin-left:auto">投资优先度 {{ u.unitPriority.toFixed(2) }}</span>
+                  </div>
+                  <div v-if="u.bisItemIds && u.bisItemIds.length" class="unit-bis">
+                    <span class="unit-bucket-lbl">BiS</span>
+                    <img v-for="it in u.bisItemIds" :key="it" :src="itemIcon(it)" class="mini-item" :title="itemName(it)" />
+                  </div>
+                  <div class="unit-item-buckets">
+                    <div v-if="u.buckets.Core.length" class="unit-bucket">
+                      <span class="unit-bucket-lbl">核心</span>
+                      <img v-for="it in u.buckets.Core" :key="it.itemId" :src="itemIcon(it.itemId)" class="mini-item" :title="itemName(it.itemId) + ' 必需度 ' + it.necessity.toFixed(2)" />
+                    </div>
+                    <div v-if="u.buckets.Important.length" class="unit-bucket">
+                      <span class="unit-bucket-lbl">重要</span>
+                      <img v-for="it in u.buckets.Important" :key="it.itemId" :src="itemIcon(it.itemId)" class="mini-item" :title="itemName(it.itemId)" />
+                    </div>
+                    <div v-if="u.buckets.Optional.length" class="unit-bucket">
+                      <span class="unit-bucket-lbl">可选</span>
+                      <img v-for="it in u.buckets.Optional" :key="it.itemId" :src="itemIcon(it.itemId)" class="mini-item" :title="itemName(it.itemId)" />
+                    </div>
+                    <div v-if="u.buckets.HighFrequency.length" class="unit-bucket">
+                      <span class="unit-bucket-lbl">高频</span>
+                      <img v-for="it in u.buckets.HighFrequency" :key="it.itemId" :src="itemIcon(it.itemId)" class="mini-item" :title="itemName(it.itemId) + ' 需求度 ' + it.necessity.toFixed(2)" />
+                    </div>
+                  </div>
+                  <div v-if="u.artifacts.length" class="unit-artifacts">
+                    <span class="muted tiny">神器:</span>
+                    <img v-for="a in u.artifacts" :key="a.itemId" :src="itemIcon(a.itemId)" class="mini-item" :title="itemName(a.itemId) + ' 均 ' + a.avgPlacement.toFixed(2)" />
+                  </div>
+                  <div v-if="u.coreCompStrengths.length" class="unit-comps">
+                    <span v-for="cc in u.coreCompStrengths" :key="cc.comp_key" class="trait-chip" @click="showCompDetail(cc.comp_key)">{{ compName(cc.comp_key) }}</span>
+                  </div>
+                </div>
+              </div>
+            </section>
+          </div>
+
+          <!-- 按装备 -->
+          <div v-if="metaTab === 'itemGuide'">
+            <div class="tabs tabs-group">
+              <span class="tabs-group-label">装备</span>
+              <button class="tab" :class="{ active: itemGuideTab === 'items' }" @click="itemGuideTab = 'items'">合成</button>
+              <button class="tab" :class="{ active: itemGuideTab === 'artifacts' }" @click="itemGuideTab = 'artifacts'">神器</button>
+              <button class="tab" :class="{ active: itemGuideTab === 'emblems' }" @click="itemGuideTab = 'emblems'">纹章</button>
+            </div>
+
+            <section class="board-section">
+              <h3>按装备 · 适用弈子</h3>
+              <div class="item-search">
+                <input v-model="itemSearch" class="search-input" placeholder="搜索装备名称…" />
+                <span class="muted tiny">{{ currentItemGuide.length }} 件</span>
+              </div>
+              <div class="item-guide-list">
+                <div v-for="g in currentItemGuide" :key="g.itemId" class="item-guide-card">
+                  <div class="champ-head">
+                    <img :src="itemIcon(g.itemId)" :alt="itemName(g.itemId)" class="champ-icon" />
+                    <span class="champ-name">{{ itemName(g.itemId) }}</span>
+                    <span class="muted tiny" style="font-size:10px">{{ g.itemName }}</span>
+                  </div>
+                  <div class="item-guide-buckets">
+                    <div v-for="(units, cost) in sortedBuckets(g.costBuckets)" :key="cost" class="guide-bucket">
+                      <span class="unit-bucket-lbl">{{ cost }}费</span>
+                      <img v-for="u in units" :key="u.unitId" :src="unitIcon(u.unitId)" class="mini-unit" :title="unitName(u.unitId) + ' 必需度 ' + u.necessity.toFixed(3)" />
+                    </div>
+                  </div>
+                  <div v-if="g.compositions && g.compositions.length" class="unit-comps">
+                    <span v-for="cc in g.compositions" :key="cc.slug" class="trait-chip" @click="showCompDetail(cc.slug)">{{ compName(cc.slug) }}</span>
+                  </div>
+                </div>
+              </div>
+            </section>
+          </div>
         </template>
-        <p v-else-if="!metaLoading" class="empty">
-          暂无 Meta 数据。请在项目根目录运行
-          <code>cargo run --bin crawl_meta</code> 生成 meta.json 后刷新。
-        </p>
+        <p v-else-if="!metaLoading" class="empty">暂无数据。</p>
       </template>
 
       <!-- 列表视图 -->
@@ -3367,5 +4048,540 @@ button.small {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* ===== 阵容一览 ===== */
+.comp-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 12px;
+}
+
+.comp-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px;
+  cursor: pointer;
+  transition: border-color 0.15s, transform 0.15s;
+}
+.comp-card:hover {
+  border-color: var(--gold);
+  transform: translateY(-2px);
+}
+
+.comp-card-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.comp-card-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 8px;
+  object-fit: cover;
+  background: #101018;
+  border: 2px solid #2a2a3a;
+}
+.comp-card-title {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.comp-card-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+}
+.comp-card-en {
+  font-size: 11px;
+}
+.comp-cost-tag {
+  font-size: 12px;
+  font-weight: 700;
+  color: #f5b23e;
+  background: rgba(245, 178, 62, 0.12);
+  border: 1px solid rgba(245, 178, 62, 0.35);
+  border-radius: 6px;
+  padding: 2px 6px;
+  white-space: nowrap;
+}
+
+.comp-card-stats {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+.comp-card-stat {
+  flex: 1;
+  background: #101018;
+  border-radius: 8px;
+  padding: 6px 4px;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.comp-card-val {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--green);
+}
+.comp-card-lbl {
+  font-size: 10px;
+  color: var(--faint);
+}
+
+.comp-card-delta {
+  margin-top: 8px;
+  font-size: 11px;
+  color: var(--faint);
+}
+.comp-card-delta.up {
+  color: var(--green);
+}
+.comp-card-delta.down {
+  color: var(--red);
+}
+
+.two-col {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+@media (max-width: 1000px) {
+  .two-col {
+    grid-template-columns: 1fr;
+  }
+}
+
+.en-name {
+  font-size: 12px;
+  font-weight: 400;
+}
+.tiny {
+  font-size: 10px;
+}
+
+/* ===== 阵容详情 ===== */
+.detail-board {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.detail-unit {
+  width: 108px;
+  background: #101018;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 8px;
+  text-align: center;
+}
+.detail-unit-icon-wrap {
+  width: 64px;
+  height: 64px;
+  margin: 0 auto;
+  border-radius: 50%;
+  overflow: hidden;
+  border: 3px solid var(--green);
+  background: #101018;
+}
+.detail-unit-icon-wrap.cost1 { border-color: #9aa4af; }
+.detail-unit-icon-wrap.cost2 { border-color: #35c66b; }
+.detail-unit-icon-wrap.cost3 { border-color: #3fa8f4; }
+.detail-unit-icon-wrap.cost4 { border-color: #c26bf1; }
+.detail-unit-icon-wrap.cost5 { border-color: #f5b23e; }
+.detail-unit-icon-wrap img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.detail-unit-name {
+  margin-top: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+}
+.detail-unit-en {
+  font-size: 10px;
+}
+.detail-builds {
+  margin-top: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.detail-build {
+  display: flex;
+  justify-content: center;
+  gap: 3px;
+}
+
+.mini-item {
+  width: 22px;
+  height: 22px;
+  border-radius: 4px;
+  object-fit: cover;
+  background: #0a0a10;
+  border: 1px solid var(--border);
+}
+.mini-unit {
+  width: 30px;
+  height: 30px;
+  border-radius: 6px;
+  object-fit: cover;
+  background: #0a0a10;
+  border: 1px solid var(--border);
+}
+
+.variant-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.variant-card {
+  background: #101018;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px;
+}
+.variant-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+.variant-name {
+  font-size: 13px;
+  font-weight: 600;
+}
+.badge {
+  font-size: 10px;
+  color: #101018;
+  background: var(--gold);
+  border-radius: 4px;
+  padding: 1px 5px;
+  margin-left: 6px;
+}
+.variant-units {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.variant-traits {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 8px;
+}
+.trait-icon-sm {
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  vertical-align: middle;
+  margin-right: 2px;
+}
+
+.priority-table .meta-row {
+  grid-template-columns: 2fr 1fr 1fr 1fr;
+}
+.prio-unit {
+  font-size: 12px;
+}
+
+/* 优先级矩阵明细 */
+.prio-row {
+  background: #101018;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px;
+  margin-bottom: 8px;
+}
+.prio-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.prio-buckets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.prio-bucket {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+}
+.prio-bucket-lbl {
+  font-size: 11px;
+  color: var(--faint);
+  padding-top: 3px;
+  width: 32px;
+  flex-shrink: 0;
+}
+.prio-items {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.prio-item {
+  position: relative;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+}
+.prio-item .mini-item {
+  width: 26px;
+  height: 26px;
+}
+.prio-item-nec {
+  font-size: 9px;
+  color: var(--green);
+  line-height: 1.2;
+}
+
+.matchup-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.matchup-row {
+  display: grid;
+  grid-template-columns: 90px 1fr auto;
+  gap: 10px;
+  align-items: center;
+  padding: 8px 10px;
+  border-radius: 8px;
+  font-size: 12px;
+  border: 1px solid var(--border);
+}
+.matchup-row.good { background: rgba(69, 212, 131, 0.08); color: var(--green); }
+.matchup-row.bad { background: rgba(240, 113, 111, 0.08); color: var(--red); }
+.matchup-row.neutral { background: rgba(157, 164, 175, 0.08); color: var(--dim); }
+
+.artifact-picks {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.artifact-pick {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  background: #101018;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 10px;
+}
+.artifact-pick-main {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.artifact-name {
+  font-size: 12px;
+  font-weight: 600;
+}
+.artifact-carrier {
+  font-size: 12px;
+  color: var(--dim);
+}
+.artifact-pair {
+  display: flex;
+  gap: 3px;
+}
+
+/* ===== 按弈子 ===== */
+.unit-item-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 10px;
+}
+.unit-item-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 10px;
+}
+.unit-item-buckets {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin-top: 8px;
+}
+.unit-bucket {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+.unit-bucket-lbl {
+  font-size: 10px;
+  color: var(--faint);
+  width: 34px;
+  flex-shrink: 0;
+}
+.unit-artifacts {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+  margin-top: 6px;
+}
+.unit-comps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 6px;
+}
+
+/* ===== 装备梯队 ===== */
+.tierlist-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.tierlist-row {
+  background: #101018;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px;
+}
+.tierlist-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.tierlist-name {
+  font-size: 13px;
+  font-weight: 600;
+}
+.tierlist-comps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.tierlist-comp {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: #0a0a10;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 4px 8px;
+  cursor: pointer;
+}
+.tierlist-comp:hover {
+  border-color: var(--gold);
+}
+.tierlist-comp-name {
+  font-size: 12px;
+}
+.tierlist-comp-strength {
+  font-size: 11px;
+  color: var(--green);
+  font-weight: 600;
+}
+
+/* ===== 按装备 ===== */
+.item-guide-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 10px;
+}
+.item-guide-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 10px;
+}
+.item-guide-buckets {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+}
+.guide-bucket {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+/* ===== 特殊装备 & 外链 ===== */
+.special-block {
+  margin-bottom: 10px;
+}
+.special-lbl {
+  font-size: 12px;
+  color: var(--dim);
+  margin: 0 0 6px;
+}
+.unit-bis {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+  margin-top: 6px;
+}
+.ext-link-wrap {
+  margin: 6px 0 10px;
+}
+.ext-link {
+  color: var(--blue);
+  text-decoration: none;
+  font-size: 12px;
+}
+.ext-link:hover {
+  text-decoration: underline;
+}
+.notes-block {
+  margin-top: 8px;
+  padding: 10px;
+  background: #101018;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+}
+.note-line {
+  margin: 4px 0;
+  font-size: 12px;
+  color: var(--dim);
+}
+.tierlist-essentials {
+  margin-top: 16px;
+}
+.tierlist-row.essentials {
+  border: 1px solid var(--green);
+}
+.tierlist-meta {
+  padding: 8px 10px;
+  background: #101018;
+  border-radius: 8px;
+  margin-bottom: 10px;
+}
+.comp-card-share {
+  margin-top: 4px;
+  display: flex;
+  gap: 8px;
+}
+.item-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.search-input {
+  background: #101018;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  padding: 6px 10px;
+  font-size: 12px;
+  width: 240px;
 }
 </style>
