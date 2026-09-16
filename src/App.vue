@@ -433,7 +433,16 @@ interface TFTtableData {
   }>;
 }
 
-const view = ref<"matches" | "stats" | "comps" | "data" | "meta">("matches");
+const view = ref<
+  | "matches"
+  | "stats"
+  | "comps"
+  | "data"
+  | "meta"
+  | "builder"
+  | "explorer"
+  | "early"
+>("matches");
 const matches = ref<MatchSummary[]>([]);
 const info = ref<AppInfo | null>(null);
 const summoner = ref<SummonerInfo | null>(null);
@@ -711,6 +720,11 @@ function unitNameEn(id: string): string {
   const e = (NAME_MAP.units as Record<string, any>)[id];
   return e ? e.en || e.cn || id : id;
 }
+function unitCost(id: string): number {
+  if (!id) return 0;
+  const e = (NAME_MAP.units as Record<string, any>)[id];
+  return e ? (e.c ?? 0) : 0;
+}
 
 function showCompDetail(slug: string) {
   selectedCompSlug.value = slug;
@@ -776,6 +790,92 @@ function fmtSigned(v: number | undefined | null, suffix: string = ""): string {
   return s + (v * 100).toFixed(2) + suffix;
 }
 
+// ===== 前期（Early）：按费用分组的低费阵容/弈子推荐 =====
+const earlyCost = ref<1 | 2 | 3 | "all">("all");
+const earlyComps = computed(() => {
+  if (!tftData.value) return [];
+  const cards = tftData.value.compositionCards.filter(
+    (c) => earlyCost.value === "all" || c.compCost === earlyCost.value
+  );
+  const byCost: Record<number, TFCompositionCard[]> = { 1: [], 2: [], 3: [], 4: [], 5: [] };
+  for (const c of cards) {
+    if (byCost[c.compCost]) byCost[c.compCost].push(c);
+  }
+  return byCost;
+});
+
+// ===== 阵容构建器（Team Builder） =====
+const builderSearch = ref("");
+const builderSelected = ref<string[]>([]);
+const builderUnits = computed(() => {
+  if (!tftData.value) return [];
+  const cat = tftData.value.compDetails[Object.keys(tftData.value.compDetails)[0]].unitCategories;
+  const ids: string[] = [];
+  for (const k of ["cost_1", "cost_2", "cost_3", "cost_4", "cost_5"]) {
+    for (const id of cat[k] || []) ids.push(id);
+  }
+  return ids;
+});
+const filteredBuilderUnits = computed(() => {
+  const q = builderSearch.value.toLowerCase();
+  return builderUnits.value.filter(
+    (id) => !q || unitName(id).toLowerCase().includes(q) || unitNameEn(id).toLowerCase().includes(q)
+  );
+});
+function toggleBuilderUnit(id: string) {
+  const i = builderSelected.value.indexOf(id);
+  if (i >= 0) builderSelected.value.splice(i, 1);
+  else builderSelected.value.push(id);
+}
+// 已选弈子的费用统计
+const builderCostCount = computed(() => {
+  const m: Record<number, number> = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
+  for (const id of builderSelected.value) {
+    const u = (NAME_MAP.units as Record<string, any>)[id];
+    if (u) m[u.c] = (m[u.c] ?? 0) + 1;
+  }
+  return m;
+});
+// 匹配该阵容的关联阵容
+const builderMatchingComps = computed(() => {
+  if (!tftData.value || builderSelected.value.length === 0) return [];
+  const sel = new Set(builderSelected.value);
+  const out: { slug: string; matched: number; total: number; units: string[] }[] = [];
+  for (const slug of Object.keys(tftData.value.compDetails)) {
+    const units = tftData.value.compDetails[slug].composition.overview.coreUnits.map((u) => u.id);
+    const matched = units.filter((id) => sel.has(id)).length;
+    if (matched >= 2) {
+      out.push({ slug, matched, total: units.length, units });
+    }
+  }
+  return out.sort((a, b) => b.matched - a.matched).slice(0, 8);
+});
+
+// ===== 数据检索器（Data Explorer） =====
+const explorerTab = ref<"units" | "items" | "comps">("units");
+const explorerUnitCost = ref<number | "all">("all");
+const explorerUnitSearch = ref("");
+const explorerUnitRows = computed(() => {
+  if (!tftData.value) return [];
+  let rows = tftData.value.unitItems;
+  if (explorerUnitCost.value !== "all") rows = rows.filter((u) => u.unitCost === explorerUnitCost.value);
+  const q = explorerUnitSearch.value.toLowerCase();
+  if (q) rows = rows.filter((u) => unitName(u.unitId).toLowerCase().includes(q) || unitNameEn(u.unitId).toLowerCase().includes(q));
+  return rows;
+});
+const explorerItemRows = computed(() => {
+  if (!tftData.value) return [];
+  return tftData.value.itemGuide.items;
+});
+const explorerCompSearch = ref("");
+const explorerCompRows = computed(() => {
+  if (!tftData.value) return [];
+  const q = explorerCompSearch.value.toLowerCase();
+  return tftData.value.compAtlas.compositionSummaries.filter(
+    (c) => !q || compName(c.slug).toLowerCase().includes(q) || c.slug.includes(q)
+  );
+});
+
 const sortedComps = computed(() => {
   if (!tftData.value) return [];
   return [...tftData.value.compAtlas.compositionSummaries].sort((a, b) => a.avgPlacementValue - b.avgPlacementValue);
@@ -839,17 +939,69 @@ function sortedBuckets(buckets: Record<string, { unitId: string; normalized: num
 }
 
 const navGroups: {
-  key: "matches" | "stats" | "comps" | "data" | "meta";
+  key: "matches" | "stats" | "comps" | "data" | "meta" | "builder" | "explorer" | "early";
   label: string;
   icon: string;
+  go?: () => void;
   children?: { label: string; go: () => void }[];
 }[] = [
-  { key: "matches", label: "战绩", icon: "◉" },
+  { key: "matches", label: "对局历史", icon: "◉" },
   { key: "stats", label: "统计", icon: "▤" },
-  { key: "comps", label: "推荐阵容", icon: "♜" },
+  { key: "comps", label: "阵容", icon: "♜" },
+  { key: "early", label: "前期", icon: "⚡" },
+  { key: "builder", label: "阵容构建器", icon: "🔧" },
+  { key: "explorer", label: "数据检索器", icon: "🔍" },
+  {
+    key: "meta",
+    label: "Meta总览",
+    icon: "★",
+    go: () => {
+      metaTab.value = "overview";
+    },
+  },
+  {
+    key: "meta",
+    label: "阵容趋势",
+    icon: "📈",
+    go: () => {
+      metaTab.value = "trends";
+    },
+  },
+  {
+    key: "meta",
+    label: "每日数据",
+    icon: "📅",
+    go: () => {
+      metaTab.value = "daily";
+    },
+  },
+  {
+    key: "meta",
+    label: "装备梯队",
+    icon: "🗡",
+    go: () => {
+      metaTab.value = "tierlist";
+    },
+  },
+  {
+    key: "meta",
+    label: "按弈子",
+    icon: "🛡",
+    go: () => {
+      metaTab.value = "unitItems";
+    },
+  },
+  {
+    key: "meta",
+    label: "按装备",
+    icon: "🎒",
+    go: () => {
+      metaTab.value = "itemGuide";
+    },
+  },
   {
     key: "data",
-      label: "机制手册",
+    label: "机制手册",
     icon: "▦",
     children: [
       { label: "装备合成", go: () => (dataTab.value = "items") },
@@ -860,32 +1012,46 @@ const navGroups: {
       { label: "机制", go: () => (dataTab.value = "rules") },
     ],
   },
-  {
-    key: "meta",
-    label: "数据",
-    icon: "★",
-    children: [
-      { label: "Meta总览", go: () => (metaTab.value = "overview") },
-      { label: "阵容趋势", go: () => (metaTab.value = "trends") },
-      { label: "每日数据", go: () => (metaTab.value = "daily") },
-      { label: "装备梯队", go: () => (metaTab.value = "tierlist") },
-      { label: "按弈子", go: () => (metaTab.value = "unitItems") },
-      { label: "按装备", go: () => (metaTab.value = "itemGuide") },
-    ],
-  },
 ];
 
-function setView(v: "matches" | "stats" | "comps" | "data" | "meta") {
+function setView(
+  v:
+    | "matches"
+    | "stats"
+    | "comps"
+    | "data"
+    | "meta"
+    | "builder"
+    | "explorer"
+    | "early",
+) {
   view.value = v;
   if (v === "stats") openStats();
   if (v === "data") openData();
-  if (v === "meta") getMeta();
-  if (v === "comps") getMeta();
+  if (v === "meta" || v === "comps" || v === "builder" || v === "explorer" || v === "early") {
+    getMeta();
+  }
 }
 
-function navGo(v: "matches" | "stats" | "comps" | "data" | "meta", child?: { go: () => void }) {
+function navGo(
+  v:
+    | "matches"
+    | "stats"
+    | "comps"
+    | "data"
+    | "meta"
+    | "builder"
+    | "explorer"
+    | "early",
+  child?: { go: () => void },
+) {
   setView(v);
   if (child) child.go();
+}
+
+function navClick(g: (typeof navGroups)[number]) {
+  setView(g.key);
+  if (g.go) g.go();
 }
 
 function pct(x: number) {
@@ -1043,13 +1209,14 @@ onMounted(async () => {
       <nav>
         <div
           v-for="g in navGroups"
-          :key="g.key"
+          :key="g.label"
           class="nav-group"
+          :class="{ 'has-sub': g.children != null && g.children.length > 0 }"
         >
           <a
             class="nav-item"
             :class="{ active: view === g.key }"
-            @click="navGo(g.key)"
+            @click="navClick(g)"
           >
             <span class="nav-ico">{{ g.icon }}</span>{{ g.label }}
             <span v-if="g.children && g.children.length" class="nav-caret">▾</span>
@@ -1059,7 +1226,7 @@ onMounted(async () => {
               v-for="c in g.children"
               :key="c.label"
               class="nav-sub-item"
-              @click="navGo(g.key, c)"
+              @click="navGo(g.key as any, c)"
             >{{ c.label }}</a>
           </div>
         </div>
@@ -1687,6 +1854,178 @@ onMounted(async () => {
             </div>
           </div>
           <p v-else-if="!metaLoading" class="empty">暂无阵容数据。</p>
+        </template>
+      </template>
+
+      <!-- 前期视图 (Early) -->
+      <template v-else-if="view === 'early'">
+        <header class="topbar">
+          <h2>前期</h2>
+          <span class="muted">低费用阵容推荐</span>
+        </header>
+        <div class="tabs tabs-group">
+          <button class="tab" :class="{ active: earlyCost === 'all' }" @click="earlyCost = 'all'">全部</button>
+          <button v-for="c in [1, 2, 3]" :key="c" class="tab" :class="{ active: earlyCost === c }" @click="earlyCost = c">{{ c }} 费</button>
+        </div>
+        <template v-if="tftData">
+          <div v-for="cost in [1, 2, 3, 4, 5]" :key="cost" v-show="earlyCost === 'all' || earlyCost === cost">
+            <section v-if="earlyComps[cost]?.length" class="board-section">
+              <h3 :style="{ color: costColors[cost - 1] }">{{ cost }}费阵容</h3>
+              <div class="comp-grid">
+                <div v-for="c in earlyComps[cost]" :key="c.slug" class="comp-card" @click="showCompDetail(c.slug)">
+                  <div class="comp-card-head">
+                    <img :src="tfImg(c.compIcon)" :alt="c.display_name_cn" class="comp-card-icon" />
+                    <div class="comp-card-title">
+                      <span class="comp-card-name">{{ c.display_name_cn }}</span>
+                      <span class="comp-card-en muted">{{ c.display_name_en }}</span>
+                    </div>
+                  </div>
+                  <div class="comp-card-stats">
+                    <div class="comp-card-stat">
+                      <span class="comp-card-val">{{ c.averagePlacementValue.toFixed(2) }}</span>
+                      <span class="comp-card-lbl">AVP</span>
+                    </div>
+                    <div class="comp-card-stat">
+                      <span class="comp-card-val">{{ (statOf(c.slug).playRate * 100).toFixed(2) }}%</span>
+                      <span class="comp-card-lbl">出场率</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </section>
+          </div>
+        </template>
+      </template>
+
+      <!-- 阵容构建器视图 (Team Builder) -->
+      <template v-else-if="view === 'builder'">
+        <header class="topbar">
+          <h2>阵容构建器</h2>
+          <span class="muted">点击选择弈子，查看关联阵容</span>
+        </header>
+        <div class="builder-wrap">
+          <div class="builder-sidebar">
+            <input v-model="builderSearch" class="search-input" placeholder="搜索英雄…" />
+            <div class="builder-unit-list">
+              <div v-for="id in filteredBuilderUnits" :key="id" class="builder-unit" :class="{ selected: builderSelected.includes(id) }" @click="toggleBuilderUnit(id)">
+                <img :src="unitIcon(id)" :alt="unitName(id)" class="builder-unit-icon" :class="'cost' + unitCost(id)" />
+                <span class="builder-unit-name">{{ unitName(id) }}</span>
+              </div>
+            </div>
+          </div>
+          <div class="builder-main">
+            <div class="builder-slots">
+              <div v-for="(id, i) in builderSelected" :key="i" class="builder-slot" @click="toggleBuilderUnit(id)">
+                <img :src="unitIcon(id)" :alt="unitName(id)" class="builder-slot-icon" />
+                <span class="builder-slot-name">{{ unitName(id) }}</span>
+                <span class="builder-slot-x">✕</span>
+              </div>
+              <div v-for="i in Math.max(0, 9 - builderSelected.length)" :key="'e'+i" class="builder-slot empty">+</div>
+            </div>
+            <div class="builder-cost-bar">
+              <span v-for="c in [1,2,3,4,5]" :key="c" class="builder-cost" :style="{ color: costColors[c-1] }">
+                {{ c }}费: <b>{{ builderCostCount[c] ?? 0 }}</b>
+              </span>
+            </div>
+            <section v-if="builderMatchingComps.length" class="board-section">
+              <h3>匹配阵容</h3>
+              <div class="meta-list">
+                <div v-for="c in builderMatchingComps" :key="c.slug" class="meta-row comp-row" @click="showCompDetail(c.slug)">
+                  <span class="meta-name">
+                    <img :src="compCardIcon(c.slug)" class="top-icon" />
+                    {{ compName(c.slug) }}
+                  </span>
+                  <span class="meta-num accent green">{{ c.matched }}/{{ c.total }} 弈子匹配</span>
+                </div>
+              </div>
+            </section>
+            <p v-if="builderSelected.length === 0" class="empty">请在左侧选择弈子开始构建</p>
+          </div>
+        </div>
+      </template>
+
+      <!-- 数据检索器视图 (Data Explorer) -->
+      <template v-else-if="view === 'explorer'">
+        <header class="topbar">
+          <h2>数据检索器</h2>
+          <span class="muted">交叉检索英雄/装备/阵容</span>
+        </header>
+        <div class="tabs tabs-group">
+          <button class="tab" :class="{ active: explorerTab === 'units' }" @click="explorerTab = 'units'">英雄</button>
+          <button class="tab" :class="{ active: explorerTab === 'items' }" @click="explorerTab = 'items'">装备</button>
+          <button class="tab" :class="{ active: explorerTab === 'comps' }" @click="explorerTab = 'comps'">阵容</button>
+        </div>
+
+        <template v-if="tftData">
+          <div v-if="explorerTab === 'units'">
+            <div class="explorer-filter">
+              <input v-model="explorerUnitSearch" class="search-input" placeholder="搜索英雄…" />
+              <div class="tabs tabs-group" style="margin-left:8px">
+                <button class="tab" :class="{ active: explorerUnitCost === 'all' }" @click="explorerUnitCost = 'all'">全部</button>
+                <button v-for="c in [1,2,3,4,5]" :key="c" class="tab" :class="{ active: explorerUnitCost === c }" @click="explorerUnitCost = c">{{ c }}费</button>
+              </div>
+            </div>
+            <div class="explorer-list">
+              <div v-for="u in explorerUnitRows" :key="u.unitId" class="explorer-row">
+                <div class="explorer-head">
+                  <img :src="unitIcon(u.unitId)" class="top-icon" />
+                  <span class="explorer-name">{{ unitName(u.unitId) }}</span>
+                  <span class="muted tiny">{{ u.unitCost }}费</span>
+                  <span v-if="u.unitPriority != null" class="muted tiny" style="margin-left:auto">优先度 {{ u.unitPriority.toFixed(2) }}</span>
+                </div>
+                <div v-if="u.buckets.Core.length" class="explorer-items">
+                  <span class="muted tiny">核心:</span>
+                  <img v-for="it in u.buckets.Core" :key="it.itemId" :src="itemIcon(it.itemId)" class="mini-item" :title="itemName(it.itemId)" />
+                </div>
+                <div v-if="u.buckets.Important.length" class="explorer-items">
+                  <span class="muted tiny">重要:</span>
+                  <img v-for="it in u.buckets.Important" :key="it.itemId" :src="itemIcon(it.itemId)" class="mini-item" :title="itemName(it.itemId)" />
+                </div>
+                <div v-if="u.coreCompStrengths.length" class="unit-comps">
+                  <span v-for="cc in u.coreCompStrengths" :key="cc.comp_key" class="trait-chip" @click="showCompDetail(cc.comp_key)">{{ compName(cc.comp_key) }}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div v-if="explorerTab === 'items'">
+            <div class="explorer-list">
+              <div v-for="g in explorerItemRows" :key="g.itemId" class="explorer-row">
+                <div class="explorer-head">
+                  <img :src="itemIcon(g.itemId)" class="top-icon" />
+                  <span class="explorer-name">{{ g.itemName }}</span>
+                </div>
+                <div v-if="g.costBuckets" class="explorer-items">
+                  <div v-for="(units, cost) in sortedBuckets(g.costBuckets)" :key="cost" style="display:flex;align-items:center;gap:4px;margin:2px 0">
+                    <span class="muted tiny" style="width:24px">{{ cost }}费</span>
+                    <img v-for="u in units.slice(0, 6)" :key="u.unitId" :src="unitIcon(u.unitId)" class="mini-unit" :title="unitName(u.unitId)" />
+                  </div>
+                </div>
+                <div v-if="g.compositions.length" class="unit-comps">
+                  <span v-for="cc in g.compositions.slice(0, 4)" :key="cc.slug + cc.unit_id" class="trait-chip" @click="showCompDetail(cc.slug)">{{ compName(cc.slug) }}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div v-if="explorerTab === 'comps'">
+            <div class="explorer-filter">
+              <input v-model="explorerCompSearch" class="search-input" placeholder="搜索阵容…" />
+            </div>
+            <div class="explorer-list">
+              <div v-for="c in explorerCompRows" :key="c.slug" class="explorer-row comp-row" @click="showCompDetail(c.slug)">
+                <div class="explorer-head">
+                  <img :src="compCardIcon(c.slug)" class="top-icon" />
+                  <span class="explorer-name">{{ compName(c.slug) }}</span>
+                </div>
+                <div class="explorer-meta">
+                  <span class="tiny muted">AVP {{ c.avgPlacementValue.toFixed(2) }}</span>
+                  <span class="tiny muted">强度 {{ (statOf(c.slug).strength * 100).toFixed(1) }}%</span>
+                  <span class="tiny muted">出场 {{ (statOf(c.slug).playRate * 100).toFixed(2) }}%</span>
+                </div>
+              </div>
+            </div>
+          </div>
         </template>
       </template>
 
@@ -4583,5 +4922,148 @@ button.small {
   padding: 6px 10px;
   font-size: 12px;
   width: 240px;
+}
+
+/* ===== 构建器 ===== */
+.builder-wrap {
+  display: flex;
+  gap: 12px;
+  min-height: 400px;
+}
+.builder-sidebar {
+  width: 280px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.builder-unit-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 500px;
+  overflow-y: auto;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 6px;
+}
+.builder-unit {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 6px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 12px;
+  transition: background 0.12s;
+}
+.builder-unit:hover { background: rgba(255,255,255,0.04); }
+.builder-unit.selected { background: rgba(240,194,75,0.12); color: var(--gold-bright); }
+.builder-unit-icon {
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  object-fit: cover;
+  border: 1px solid var(--border);
+}
+.builder-unit-icon.cost1 { border-color: #9aa4af; }
+.builder-unit-icon.cost2 { border-color: #35c66b; }
+.builder-unit-icon.cost3 { border-color: #3fa8f4; }
+.builder-unit-icon.cost4 { border-color: #c26bf1; }
+.builder-unit-icon.cost5 { border-color: #f5b23e; }
+.builder-main {
+  flex: 1;
+  min-width: 0;
+}
+.builder-slots {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.builder-slot {
+  width: 60px;
+  height: 72px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--card);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  position: relative;
+  transition: border-color 0.15s;
+}
+.builder-slot:hover { border-color: var(--gold); }
+.builder-slot.empty {
+  border-style: dashed;
+  color: var(--faint);
+  cursor: default;
+  font-size: 20px;
+}
+.builder-slot-icon { width: 34px; height: 34px; border-radius: 50%; object-fit: cover; }
+.builder-slot-name { font-size: 9px; margin-top: 2px; color: var(--dim); }
+.builder-slot-x {
+  position: absolute;
+  top: 2px;
+  right: 4px;
+  font-size: 9px;
+  color: var(--red);
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+.builder-slot:hover .builder-slot-x { opacity: 1; }
+.builder-cost-bar {
+  display: flex;
+  gap: 14px;
+  margin: 8px 0 12px;
+  font-size: 12px;
+}
+.builder-cost b { font-size: 14px; }
+
+/* ===== 检索器 ===== */
+.explorer-filter {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+  flex-wrap: wrap;
+}
+.explorer-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.explorer-row {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 10px;
+  transition: border-color 0.12s;
+}
+.explorer-row:hover { border-color: rgba(240,194,75,0.3); }
+.explorer-row.comp-row { cursor: pointer; }
+.explorer-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.explorer-name {
+  font-size: 13px;
+  font-weight: 600;
+}
+.explorer-items {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+  margin-top: 4px;
+}
+.explorer-meta {
+  display: flex;
+  gap: 10px;
+  margin-top: 4px;
 }
 </style>
