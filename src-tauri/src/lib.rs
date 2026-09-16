@@ -9,7 +9,7 @@ use std::sync::{Arc, Mutex};
 
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
-use tauri::{AppHandle, Emitter, Manager, State, WebviewUrl, WebviewWindowBuilder};
+use tauri::{AppHandle, Emitter, Manager, State};
 
 use crate::lcu::LcuClient;
 use crate::models::{
@@ -456,37 +456,6 @@ async fn gameflow_loop(
     }
 }
 
-fn create_overlay(app: &AppHandle) -> tauri::Result<()> {
-    if app.get_webview_window("overlay").is_some() {
-        return Ok(());
-    }
-    WebviewWindowBuilder::new(app, "overlay", WebviewUrl::App("index.html".into()))
-        .title("TFT Sidekick 悬浮窗")
-        .inner_size(280.0, 160.0)
-        .resizable(false)
-        .decorations(false)
-        .always_on_top(true)
-        .skip_taskbar(true)
-        .build()?;
-    Ok(())
-}
-
-#[tauri::command]
-fn toggle_overlay(app: AppHandle) -> Result<bool, String> {
-    if let Some(w) = app.get_webview_window("overlay") {
-        let visible = w.is_visible().unwrap_or(false);
-        if visible {
-            let _ = w.hide();
-        } else {
-            let _ = w.show();
-        }
-        Ok(!visible)
-    } else {
-        create_overlay(&app).map_err(|e| e.to_string())?;
-        Ok(true)
-    }
-}
-
 fn show_main_window(app: &AppHandle) {
     if let Some(window) = app.get_webview_window("main") {
         let _ = window.show();
@@ -496,9 +465,8 @@ fn show_main_window(app: &AppHandle) {
 
 fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
     let show = MenuItem::with_id(app, "show", "打开主界面", true, None::<&str>)?;
-    let overlay = MenuItem::with_id(app, "overlay", "显示/隐藏悬浮窗", true, None::<&str>)?;
     let quit = MenuItem::with_id(app, "quit", "退出", true, None::<&str>)?;
-    let menu = Menu::with_items(app, &[&show, &overlay, &quit])?;
+    let menu = Menu::with_items(app, &[&show, &quit])?;
 
     TrayIconBuilder::new()
         .icon(app.default_window_icon().unwrap().clone())
@@ -507,9 +475,6 @@ fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
         .show_menu_on_left_click(false)
         .on_menu_event(|app, event| match event.id.as_ref() {
             "show" => show_main_window(app),
-            "overlay" => {
-                let _ = toggle_overlay(app.clone());
-            }
             "quit" => app.exit(0),
             _ => {}
         })
@@ -582,7 +547,6 @@ pub fn run() {
             get_stats,
             app_info,
             sync_matches,
-            toggle_overlay,
             get_items,
             get_champions,
             get_traits,

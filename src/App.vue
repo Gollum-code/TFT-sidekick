@@ -4,8 +4,6 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 
-const isOverlay = getCurrentWindow().label === "overlay";
-
 interface MatchSummary {
   game_id: string;
   game_mode: string | null;
@@ -130,18 +128,6 @@ interface TraitData {
 interface ShopOddsLevel {
   level: number;
   odds: number[];
-}
-
-interface Profile {
-  rank_tier: string;
-  rank_division: string;
-  rank_lp: number;
-  rank_wins: number;
-  rank_losses: number;
-  win_rate: number;
-  top4_rate: number;
-  avg_placement: number;
-  total: number;
 }
 
 interface RulesSection {
@@ -469,36 +455,6 @@ function showToast(msg: string) {
   toastTimer = setTimeout(() => (toast.value = ""), 5000);
 }
 
-const overlayMatches = ref<MatchSummary[]>([]);
-const overlayAvg = ref("");
-const overlayProfile = ref<Profile | null>(null);
-
-async function loadOverlay() {
-  try {
-    const [matches, profile] = await Promise.all([
-      invoke<MatchSummary[]>("list_matches", { limit: 8 }),
-      invoke<Profile>("get_profile"),
-    ]);
-    overlayMatches.value = matches;
-    const p = matches.map((m) => m.placement);
-    overlayAvg.value =
-      p.length > 0
-        ? (p.reduce((a, b) => a + b, 0) / p.length).toFixed(1)
-        : "";
-    overlayProfile.value = profile;
-  } catch {
-    /* 静默失败 */
-  }
-}
-
-async function toggleOverlay() {
-  try {
-    await invoke<boolean>("toggle_overlay");
-  } catch (e) {
-    error.value = String(e);
-  }
-}
-
 async function minWin() {
   await getCurrentWindow().minimize();
 }
@@ -731,7 +687,7 @@ function unitCost(id: string): number {
 
 function showCompDetail(slug: string) {
   selectedCompSlug.value = slug;
-  view.value = "comps";
+  view.value = "compList";
 }
 function closeCompDetail() {
   selectedCompSlug.value = null;
@@ -787,18 +743,8 @@ function compCardIcon(slug: string): string {
   const c = cardOf(slug);
   return c.compIcon ? tfImg(c.compIcon) : unitIcon(slug);
 }
-function compCarryIcon(slug: string): string {
-  const detail = tftData.value?.compDetails[slug];
-  if (detail?.composition.overview.coreUnits.length) return unitIcon(detail.composition.overview.coreUnits[0].id);
-  return slug;
-}
 function costShareArr(obj: Record<string, number>): number[] {
   return [1, 2, 3, 4, 5].map((k) => obj[String(k)] ?? 0);
-}
-function fmtSigned(v: number | undefined | null, suffix: string = ""): string {
-  if (v == null) return "—";
-  const s = v > 0 ? "+" : "";
-  return s + (v * 100).toFixed(2) + suffix;
 }
 
 // ===== 前期（Early）：按费用分组的低费阵容/弈子推荐 =====
@@ -1000,10 +946,6 @@ const builderActiveTraits = computed(() => {
   return out.sort((a, b) => b.count - a.count);
 });
 
-const sortedComps = computed(() => {
-  if (!tftData.value) return [];
-  return [...tftData.value.compAtlas.compositionSummaries].sort((a, b) => a.avgPlacementValue - b.avgPlacementValue);
-});
 const winShareComps = computed(() => tftData.value ? [...tftData.value.metaStats.winShare.compositions].sort((a, b) => b.wins - a.wins) : []);
 const top4ShareComps = computed(() => tftData.value ? [...tftData.value.metaStats.top4Share.compositions].sort((a, b) => b.wins - a.wins) : []);
 const sortedTrendRows = computed(() => tftData.value ? [...tftData.value.trends.compositionRows].sort((a, b) => a.avgPlacementValue - b.avgPlacementValue) : []);
@@ -1071,8 +1013,7 @@ const navGroups: {
 }[] = [
   { key: "matches", label: "对局历史", icon: "◉" },
   { key: "stats", label: "统计", icon: "▤" },
-  { key: "comps", label: "阵容", icon: "♜" },
-  { key: "compList", label: "阵容列表", icon: "📋" },
+  { key: "compList", label: "阵容列表", icon: "♜" },
   { key: "early", label: "前期", icon: "⚡" },
   { key: "builder", label: "阵容构建器", icon: "🔧" },
   { key: "explorer", label: "数据检索器", icon: "🔍" },
@@ -1256,15 +1197,6 @@ function fmtDate(s: string) {
 }
 
 onMounted(async () => {
-  if (isOverlay) {
-    await loadOverlay();
-    await listen<MatchSummary | null>("match-ended", () => {
-      loadOverlay();
-    });
-    setInterval(loadOverlay, 30000);
-    return;
-  }
-
   loadMatches();
   loadInfo();
 
@@ -1287,38 +1219,11 @@ onMounted(async () => {
       lcuSource.value = "";
     }
   });
-
-  });
+});
 </script>
 
 <template>
-  <div v-if="isOverlay" class="overlay" data-tauri-drag-region>
-    <div class="overlay-header">
-      <span class="dot"></span>
-      <span class="overlay-title">TFT Sidekick</span>
-      <span v-if="overlayAvg" class="overlay-avg">均名次 {{ overlayAvg }}</span>
-      <button class="overlay-close" title="关闭" @click="toggleOverlay">✕</button>
-    </div>
-    <div v-if="overlayProfile" class="overlay-rank">
-      {{ overlayProfile.rank_tier }} {{ overlayProfile.rank_division }}
-      <span class="overlay-lp">{{ overlayProfile.rank_lp }} LP</span>
-      <span class="overlay-winrate">{{ (overlayProfile.win_rate * 100).toFixed(1) }}% WR</span>
-    </div>
-    <div class="overlay-places">
-      <span
-        v-for="m in overlayMatches"
-        :key="m.game_id"
-        class="place-badge"
-        :class="`p${m.placement}`"
-      >
-        {{ m.placement }}
-      </span>
-      <span v-if="overlayMatches.length === 0" class="overlay-empty">暂无记录</span>
-    </div>
-    <div class="overlay-footer">对局结束后自动记录</div>
-  </div>
-
-  <div v-else class="window">
+  <div class="window">
     <div class="titlebar" data-tauri-drag-region>
       <div class="titlebar-left">
         <span class="titlebar-logo">◈</span>
@@ -1374,7 +1279,6 @@ onMounted(async () => {
           <span v-else>LCU 未连接</span>
         </div>
         <div v-if="lcuSource" class="lcu-source">凭据来源: {{ lcuSource }}</div>
-        <button class="ghost small" @click="toggleOverlay">悬浮窗</button>
       </div>
     </aside>
 
@@ -1722,275 +1626,6 @@ onMounted(async () => {
       </template>
 
       <!-- 阵容一览 + 阵容详情 -->
-      <template v-else-if="view === 'comps'">
-        <header class="topbar">
-          <h2>阵容一览</h2>
-          <button @click="getMeta" :disabled="metaLoading">
-            {{ metaLoading ? "加载中…" : "刷新" }}
-          </button>
-        </header>
-        <div class="odds-note">当前版本 {{ tftData?.patch }} · 高分段常用阵容，按强度排序。</div>
-
-        <template v-if="selectedCompDetail && selectedCard">
-          <div class="comp-detail">
-            <header class="topbar">
-              <button class="ghost" @click="closeCompDetail">← 返回阵容列表</button>
-              <h2 class="detail-title">
-                <img :src="tfImg(selectedCard.compIcon)" :alt="selectedCard.display_name_cn" class="top-icon" />
-                {{ selectedCard.display_name_cn }}
-                <span class="muted en-name">{{ selectedCard.display_name_en }}</span>
-              </h2>
-            </header>
-
-            <!-- 概览统计 -->
-            <div class="comp-stat-cards">
-              <div class="stat-card">
-                <div class="stat-value">{{ selectedCompDetail.composition.overview.stats.avgPlacement }}</div>
-                <div class="stat-label">平均名次</div>
-              </div>
-              <div class="stat-card">
-                <div class="stat-value">{{ selectedCompDetail.composition.overview.stats.winRate }}</div>
-                <div class="stat-label">吃鸡率</div>
-              </div>
-              <div class="stat-card">
-                <div class="stat-value">{{ selectedCompDetail.composition.summary.sampleSize.toLocaleString() }}</div>
-                <div class="stat-label">样本</div>
-              </div>
-              <div class="stat-card">
-                <div class="stat-value">{{ selectedCompDetail.composition.dataSource.patch }}</div>
-                <div class="stat-label">数据版本</div>
-              </div>
-            </div>
-            <div v-if="selectedCompDetail.composition.metatftLink" class="ext-link-wrap">
-              <a :href="selectedCompDetail.composition.metatftLink" target="_blank" rel="noopener" class="ext-link">在 MetaTFT 查看该阵容 →</a>
-            </div>
-
-            <!-- 核心阵容 -->
-            <section class="board-section">
-              <h3>核心弈子与出装</h3>
-              <div class="detail-board">
-                <div v-for="u in selectedCompDetail.composition.overview.coreUnits" :key="u.id" class="detail-unit">
-                  <div class="detail-unit-icon-wrap" :class="'cost' + u.cost">
-                    <img :src="unitIcon(u.id)" :alt="u.nameCn" class="unit-icon" />
-                  </div>
-                  <div class="detail-unit-name">{{ u.nameCn }}</div>
-                  <div class="detail-unit-en muted">{{ u.nameEn }}</div>
-                  <div class="detail-builds">
-                    <div v-for="b in u.builds" :key="b.index" class="detail-build" :title="'出装 ' + b.index">
-                      <img v-for="it in b.items" :key="it.id" :src="itemIcon(it.id)" :alt="it.id" class="mini-item" />
-                    </div>
-                    <div v-if="!u.builds.length" class="muted tiny">无核心出装</div>
-                  </div>
-                </div>
-              </div>
-            </section>
-
-            <!-- 羁绊 -->
-            <section class="board-section">
-              <h3>关键羁绊</h3>
-              <div class="traits">
-                <div v-for="t in selectedCompDetail.composition.overview.traits" :key="t.id" class="trait">
-                  <img v-if="t.icon" :src="tfImg(t.icon)" :alt="traitName(t.id)" class="trait-icon" />
-                  <span class="trait-name">{{ traitName(t.id) }}</span>
-                  <span class="trait-tier">{{ t.unitsRequired }} 单位</span>
-                </div>
-              </div>
-            </section>
-
-            <!-- 变体 -->
-            <section v-if="selectedCompDetail.composition.variants.length" class="board-section">
-              <h3>阵容变体</h3>
-              <div class="variant-list">
-                <div v-for="(v, i) in selectedCompDetail.composition.variants" :key="v.variant_id" class="variant-card">
-                  <div class="variant-head">
-                    <span class="variant-name">变体 {{ i + 1 }}<span v-if="v.is_primary" class="badge">主力</span></span>
-                    <span class="muted">占比 {{ (v.clustered_stats.share * 100).toFixed(1) }}% · 均 {{ v.clustered_stats.avg_placement.toFixed(2) }}</span>
-                  </div>
-                  <div class="variant-units">
-                    <img v-for="u in v.units" :key="u.id" :src="unitIcon(u.id)" :alt="unitName(u.id)" class="mini-unit" :title="unitName(u.id)" />
-                  </div>
-                  <div v-if="v.traits.length" class="variant-traits">
-                    <span v-for="t in v.traits" :key="t.id" class="trait-chip">
-                      <img v-if="t.icon" :src="tfImg(t.icon)" :alt="traitName(t.id)" class="trait-icon-sm" />
-                      {{ t.unitsRequired }} {{ traitName(t.id) }}
-                    </span>
-                  </div>
-                </div>
-              </div>
-            </section>
-
-            <!-- 出装优先级矩阵 -->
-            <section class="board-section">
-              <h3>出装优先级矩阵</h3>
-              <div v-for="r in selectedCompDetail.composition.priorityMatrixRows" :key="r.unitId" class="prio-row">
-                <div class="prio-head">
-                  <img :src="unitIcon(r.unitId)" class="top-icon" :alt="unitName(r.unitId)" />
-                  <span class="prio-unit">{{ unitName(r.unitId) }}</span>
-                  <span class="muted tiny" style="margin-left:4px; font-size:10px">{{ unitNameEn(r.unitId) }}</span>
-                  <span v-if="r.unitPriority != null" class="muted tiny" style="margin-left:4px">优先度 {{ r.unitPriority.toFixed(2) }}</span>
-                </div>
-                <div class="prio-buckets">
-                  <div v-if="r.buckets.Core.length" class="prio-bucket">
-                    <span class="prio-bucket-lbl">核心</span>
-                    <div class="prio-items">
-                      <div v-for="it in r.buckets.Core" :key="it.itemId" class="prio-item">
-                        <img :src="itemIcon(it.itemId)" class="mini-item" :title="itemName(it.itemId) + ' (' + it.necessity.toFixed(2) + ')'" />
-                        <span class="prio-item-nec">{{ it.necessity.toFixed(2) }}</span>
-                      </div>
-                    </div>
-                  </div>
-                  <div v-if="r.buckets.Important.length" class="prio-bucket">
-                    <span class="prio-bucket-lbl">重要</span>
-                    <div class="prio-items">
-                      <div v-for="it in r.buckets.Important" :key="it.itemId" class="prio-item">
-                        <img :src="itemIcon(it.itemId)" class="mini-item" :title="itemName(it.itemId) + ' (' + it.necessity.toFixed(2) + ')'" />
-                        <span class="prio-item-nec">{{ it.necessity.toFixed(2) }}</span>
-                      </div>
-                    </div>
-                  </div>
-                  <div v-if="r.buckets.Optional.length" class="prio-bucket">
-                    <span class="prio-bucket-lbl">可选</span>
-                    <div class="prio-items">
-                      <div v-for="it in r.buckets.Optional" :key="it.itemId" class="prio-item">
-                        <img :src="itemIcon(it.itemId)" class="mini-item" :title="itemName(it.itemId) + ' (' + it.necessity.toFixed(2) + ')'" />
-                        <span class="prio-item-nec">{{ it.necessity.toFixed(2) }}</span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </section>
-
-            <!-- 特殊装备：光明神器 + 纹章 -->
-            <section v-if="specialGroupsVisible" class="board-section">
-              <h3>特殊装备推荐</h3>
-              <div v-if="selectedCompDetail.composition.specialGroups.artifacts.length" class="special-block">
-                <h4 class="special-lbl">神器</h4>
-                <div class="artifact-picks">
-                  <div v-for="g in selectedCompDetail.composition.specialGroups.artifacts" :key="g.unitId" class="artifact-pick">
-                    <div class="artifact-pick-main">
-                      <img :src="unitIcon(g.unitId)" :alt="unitName(g.unitId)" class="mini-unit" />
-                      <span class="artifact-carrier">{{ unitName(g.unitId) }}</span>
-                      <img v-for="it in g.items" :key="it.id" :src="itemIcon(it.id)" class="mini-item" :title="itemName(it.id) + ' 均 ' + it.avgPlacement.toFixed(2)" />
-                    </div>
-                  </div>
-                </div>
-              </div>
-              <div v-if="selectedCompDetail.composition.specialGroups.radiants.length" class="special-block">
-                <h4 class="special-lbl">光明装备</h4>
-                <div class="artifact-picks">
-                  <div v-for="g in selectedCompDetail.composition.specialGroups.radiants" :key="g.unitId" class="artifact-pick">
-                    <div class="artifact-pick-main">
-                      <img :src="unitIcon(g.unitId)" :alt="unitName(g.unitId)" class="mini-unit" />
-                      <span class="artifact-carrier">{{ unitName(g.unitId) }}</span>
-                      <img v-for="it in g.items" :key="it.id" :src="itemIcon(it.id)" class="mini-item" :title="itemName(it.id) + ' 均 ' + it.avgPlacement.toFixed(2)" />
-                    </div>
-                  </div>
-                </div>
-              </div>
-              <div v-if="selectedCompDetail.composition.specialGroups.emblems.length" class="special-block">
-                <h4 class="special-lbl">纹章</h4>
-                <div class="artifact-picks">
-                  <div v-for="g in selectedCompDetail.composition.specialGroups.emblems" :key="g.itemId" class="artifact-pick">
-                    <div class="artifact-pick-main">
-                      <img :src="itemIcon(g.itemId)" :alt="itemName(g.itemId)" class="mini-item" />
-                      <span class="artifact-name">{{ itemName(g.itemId) }}</span>
-                      <span class="muted tiny">均 {{ g.avgPlacement.toFixed(2) }} · 出现率 {{ (g.appearanceRate * 100).toFixed(1) }}%</span>
-                      <img v-for="c in g.carriers" :key="c.unit_id" :src="unitIcon(c.unit_id)" class="mini-unit" :title="unitName(c.unit_id) + (c.best ? ' ★' : '')" />
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </section>
-
-            <!-- 互害 / 受益 -->
-            <section v-if="selectedCompDetail.composition.matchups" class="board-section">
-              <h3>克制关系</h3>
-              <div class="matchup-list">
-                <div v-for="b in selectedCompDetail.composition.matchups.benefits" :key="b.key" class="matchup-row good">
-                  <span>受益对阵</span>
-                  <span>{{ compName(b.key) }}</span>
-                  <span class="muted">delta {{ b.delta.toFixed(3) }}</span>
-                </div>
-                <div v-for="c in selectedCompDetail.composition.matchups.counteredBy" :key="c.key" class="matchup-row bad">
-                  <span>被克制</span>
-                  <span>{{ compName(c.key) }}</span>
-                  <span class="muted">delta {{ c.delta.toFixed(3) }}</span>
-                </div>
-                <div v-for="m in selectedCompDetail.composition.matchups.mutualConstraints" :key="m.key" class="matchup-row neutral">
-                  <span>互相挤压</span>
-                  <span>{{ compName(m.key) }}</span>
-                  <span class="muted">delta {{ m.delta.toFixed(3) }}</span>
-                </div>
-                <p v-if="!selectedCompDetail.composition.matchups.benefits.length && !selectedCompDetail.composition.matchups.counteredBy.length && !selectedCompDetail.composition.matchups.mutualConstraints.length" class="empty" style="padding: 8px 0; text-align: left">无克制数据。</p>
-              </div>
-            </section>
-
-            <!-- 神器推荐 -->
-            <section v-if="selectedCompDetail.composition.artifactPicks && selectedCompDetail.composition.artifactPicks.picks.length" class="board-section">
-              <h3>神器推荐</h3>
-              <div class="artifact-picks">
-                <div v-for="p in selectedCompDetail.composition.artifactPicks.picks" :key="p.artifactId" class="artifact-pick">
-                  <div class="artifact-pick-main">
-                    <img :src="tfImg(p.artifactIcon)" :alt="p.artifactName" class="mini-item" />
-                    <span class="artifact-name">{{ p.artifactName }}</span>
-                    <span class="muted tiny">→</span>
-                    <img :src="tfImg(p.carrierIcon)" :alt="p.carrierName" class="mini-unit" />
-                    <span class="artifact-carrier">{{ p.carrierName }}</span>
-                    <span class="muted tiny">强度 {{ p.strength.toFixed(3) }}</span>
-                  </div>
-                  <div v-if="p.topPair" class="artifact-pair">
-                    <img v-for="it in p.topPair.items" :key="it.itemId" :src="tfImg(it.icon)" :alt="it.name" class="mini-item" :title="it.name" />
-                  </div>
-                </div>
-              </div>
-            </section>
-          </div>
-        </template>
-
-        <template v-else>
-          <div v-if="tftData && tftData.compAtlas.compositionSummaries.length" class="comp-grid">
-            <div
-              v-for="c in sortedComps"
-              :key="c.slug"
-              class="comp-card"
-              @click="showCompDetail(c.slug)"
-            >
-              <div class="comp-card-head">
-                <img :src="cardOf(c.slug).compIcon ? tfImg(cardOf(c.slug).compIcon) : unitIcon(compCarryIcon(c.slug))" :alt="cardOf(c.slug).display_name_cn" class="comp-card-icon" />
-                <div class="comp-card-title">
-                  <span class="comp-card-name">{{ cardOf(c.slug).display_name_cn }}</span>
-                  <span class="comp-card-en muted">{{ cardOf(c.slug).display_name_en }}</span>
-                </div>
-                <span class="comp-cost-tag">${{ cardOf(c.slug).compCost }}</span>
-              </div>
-              <div class="comp-card-stats">
-                <div class="comp-card-stat">
-                  <span class="comp-card-val">{{ c.avgPlacementValue.toFixed(2) }}</span>
-                  <span class="comp-card-lbl">平均名次</span>
-                </div>
-                <div class="comp-card-stat">
-                  <span class="comp-card-val">{{ (statOf(c.slug).strength * 100).toFixed(1) }}%</span>
-                  <span class="comp-card-lbl">强度</span>
-                </div>
-                <div class="comp-card-stat">
-                  <span class="comp-card-val">{{ (statOf(c.slug).playRate * 100).toFixed(2) }}%</span>
-                  <span class="comp-card-lbl">出场率</span>
-                </div>
-              </div>
-              <div class="comp-card-delta" :class="{ up: c.trendDelta < 0, down: c.trendDelta > 0 }">
-                {{ c.trendDelta < 0 ? "▲" : (c.trendDelta > 0 ? "▼" : "—") }} 名次变化 {{ Math.abs(c.trendDelta).toFixed(2) }}
-              </div>
-              <div class="comp-card-share">
-                <span class="tiny muted">登顶占比变化 {{ fmtSigned(c.winShareDelta, "%") }}</span>
-                <span class="tiny muted">| 出场变化 {{ fmtSigned(c.playRateDelta, "%") }}</span>
-              </div>
-            </div>
-          </div>
-          <p v-else-if="!metaLoading" class="empty">暂无阵容数据。</p>
-        </template>
-      </template>
-
       <!-- 前期视图 (Early) -->
       <template v-else-if="view === 'early'">
         <header class="topbar">
@@ -2246,7 +1881,225 @@ onMounted(async () => {
           <h2>阵容列表</h2>
           <span class="muted">点击收藏 / 取消收藏阵容</span>
         </header>
-        <template v-if="tftData">
+        <template v-if="selectedCompDetail && selectedCard">
+          <div class="comp-detail">
+            <header class="topbar">
+              <button class="ghost" @click="closeCompDetail">← 返回阵容列表</button>
+              <h2 class="detail-title">
+                <img :src="tfImg(selectedCard.compIcon)" :alt="selectedCard.display_name_cn" class="top-icon" />
+                {{ selectedCard.display_name_cn }}
+                <span class="muted en-name">{{ selectedCard.display_name_en }}</span>
+              </h2>
+            </header>
+
+            <!-- 概览统计 -->
+            <div class="comp-stat-cards">
+              <div class="stat-card">
+                <div class="stat-value">{{ selectedCompDetail.composition.overview.stats.avgPlacement }}</div>
+                <div class="stat-label">平均名次</div>
+              </div>
+              <div class="stat-card">
+                <div class="stat-value">{{ selectedCompDetail.composition.overview.stats.winRate }}</div>
+                <div class="stat-label">吃鸡率</div>
+              </div>
+              <div class="stat-card">
+                <div class="stat-value">{{ selectedCompDetail.composition.summary.sampleSize.toLocaleString() }}</div>
+                <div class="stat-label">样本</div>
+              </div>
+              <div class="stat-card">
+                <div class="stat-value">{{ selectedCompDetail.composition.dataSource.patch }}</div>
+                <div class="stat-label">数据版本</div>
+              </div>
+            </div>
+            <div v-if="selectedCompDetail.composition.metatftLink" class="ext-link-wrap">
+              <a :href="selectedCompDetail.composition.metatftLink" target="_blank" rel="noopener" class="ext-link">在 MetaTFT 查看该阵容 →</a>
+            </div>
+
+            <!-- 核心阵容 -->
+            <section class="board-section">
+              <h3>核心弈子与出装</h3>
+              <div class="detail-board">
+                <div v-for="u in selectedCompDetail.composition.overview.coreUnits" :key="u.id" class="detail-unit">
+                  <div class="detail-unit-icon-wrap" :class="'cost' + u.cost">
+                    <img :src="unitIcon(u.id)" :alt="u.nameCn" class="unit-icon" />
+                  </div>
+                  <div class="detail-unit-name">{{ u.nameCn }}</div>
+                  <div class="detail-unit-en muted">{{ u.nameEn }}</div>
+                  <div class="detail-builds">
+                    <div v-for="b in u.builds" :key="b.index" class="detail-build" :title="'出装 ' + b.index">
+                      <img v-for="it in b.items" :key="it.id" :src="itemIcon(it.id)" :alt="it.id" class="mini-item" />
+                    </div>
+                    <div v-if="!u.builds.length" class="muted tiny">无核心出装</div>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            <!-- 羁绊 -->
+            <section class="board-section">
+              <h3>关键羁绊</h3>
+              <div class="traits">
+                <div v-for="t in selectedCompDetail.composition.overview.traits" :key="t.id" class="trait">
+                  <img v-if="t.icon" :src="tfImg(t.icon)" :alt="traitName(t.id)" class="trait-icon" />
+                  <span class="trait-name">{{ traitName(t.id) }}</span>
+                  <span class="trait-tier">{{ t.unitsRequired }} 单位</span>
+                </div>
+              </div>
+            </section>
+
+            <!-- 变体 -->
+            <section v-if="selectedCompDetail.composition.variants.length" class="board-section">
+              <h3>阵容变体</h3>
+              <div class="variant-list">
+                <div v-for="(v, i) in selectedCompDetail.composition.variants" :key="v.variant_id" class="variant-card">
+                  <div class="variant-head">
+                    <span class="variant-name">变体 {{ i + 1 }}<span v-if="v.is_primary" class="badge">主力</span></span>
+                    <span class="muted">占比 {{ (v.clustered_stats.share * 100).toFixed(1) }}% · 均 {{ v.clustered_stats.avg_placement.toFixed(2) }}</span>
+                  </div>
+                  <div class="variant-units">
+                    <img v-for="u in v.units" :key="u.id" :src="unitIcon(u.id)" :alt="unitName(u.id)" class="mini-unit" :title="unitName(u.id)" />
+                  </div>
+                  <div v-if="v.traits.length" class="variant-traits">
+                    <span v-for="t in v.traits" :key="t.id" class="trait-chip">
+                      <img v-if="t.icon" :src="tfImg(t.icon)" :alt="traitName(t.id)" class="trait-icon-sm" />
+                      {{ t.unitsRequired }} {{ traitName(t.id) }}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            <!-- 出装优先级矩阵 -->
+            <section class="board-section">
+              <h3>出装优先级矩阵</h3>
+              <div v-for="r in selectedCompDetail.composition.priorityMatrixRows" :key="r.unitId" class="prio-row">
+                <div class="prio-head">
+                  <img :src="unitIcon(r.unitId)" class="top-icon" :alt="unitName(r.unitId)" />
+                  <span class="prio-unit">{{ unitName(r.unitId) }}</span>
+                  <span class="muted tiny" style="margin-left:4px; font-size:10px">{{ unitNameEn(r.unitId) }}</span>
+                  <span v-if="r.unitPriority != null" class="muted tiny" style="margin-left:4px">优先度 {{ r.unitPriority.toFixed(2) }}</span>
+                </div>
+                <div class="prio-buckets">
+                  <div v-if="r.buckets.Core.length" class="prio-bucket">
+                    <span class="prio-bucket-lbl">核心</span>
+                    <div class="prio-items">
+                      <div v-for="it in r.buckets.Core" :key="it.itemId" class="prio-item">
+                        <img :src="itemIcon(it.itemId)" class="mini-item" :title="itemName(it.itemId) + ' (' + it.necessity.toFixed(2) + ')'" />
+                        <span class="prio-item-nec">{{ it.necessity.toFixed(2) }}</span>
+                      </div>
+                    </div>
+                  </div>
+                  <div v-if="r.buckets.Important.length" class="prio-bucket">
+                    <span class="prio-bucket-lbl">重要</span>
+                    <div class="prio-items">
+                      <div v-for="it in r.buckets.Important" :key="it.itemId" class="prio-item">
+                        <img :src="itemIcon(it.itemId)" class="mini-item" :title="itemName(it.itemId) + ' (' + it.necessity.toFixed(2) + ')'" />
+                        <span class="prio-item-nec">{{ it.necessity.toFixed(2) }}</span>
+                      </div>
+                    </div>
+                  </div>
+                  <div v-if="r.buckets.Optional.length" class="prio-bucket">
+                    <span class="prio-bucket-lbl">可选</span>
+                    <div class="prio-items">
+                      <div v-for="it in r.buckets.Optional" :key="it.itemId" class="prio-item">
+                        <img :src="itemIcon(it.itemId)" class="mini-item" :title="itemName(it.itemId) + ' (' + it.necessity.toFixed(2) + ')'" />
+                        <span class="prio-item-nec">{{ it.necessity.toFixed(2) }}</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            <!-- 特殊装备：光明神器 + 纹章 -->
+            <section v-if="specialGroupsVisible" class="board-section">
+              <h3>特殊装备推荐</h3>
+              <div v-if="selectedCompDetail.composition.specialGroups.artifacts.length" class="special-block">
+                <h4 class="special-lbl">神器</h4>
+                <div class="artifact-picks">
+                  <div v-for="g in selectedCompDetail.composition.specialGroups.artifacts" :key="g.unitId" class="artifact-pick">
+                    <div class="artifact-pick-main">
+                      <img :src="unitIcon(g.unitId)" :alt="unitName(g.unitId)" class="mini-unit" />
+                      <span class="artifact-carrier">{{ unitName(g.unitId) }}</span>
+                      <img v-for="it in g.items" :key="it.id" :src="itemIcon(it.id)" class="mini-item" :title="itemName(it.id) + ' 均 ' + it.avgPlacement.toFixed(2)" />
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div v-if="selectedCompDetail.composition.specialGroups.radiants.length" class="special-block">
+                <h4 class="special-lbl">光明装备</h4>
+                <div class="artifact-picks">
+                  <div v-for="g in selectedCompDetail.composition.specialGroups.radiants" :key="g.unitId" class="artifact-pick">
+                    <div class="artifact-pick-main">
+                      <img :src="unitIcon(g.unitId)" :alt="unitName(g.unitId)" class="mini-unit" />
+                      <span class="artifact-carrier">{{ unitName(g.unitId) }}</span>
+                      <img v-for="it in g.items" :key="it.id" :src="itemIcon(it.id)" class="mini-item" :title="itemName(it.id) + ' 均 ' + it.avgPlacement.toFixed(2)" />
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div v-if="selectedCompDetail.composition.specialGroups.emblems.length" class="special-block">
+                <h4 class="special-lbl">纹章</h4>
+                <div class="artifact-picks">
+                  <div v-for="g in selectedCompDetail.composition.specialGroups.emblems" :key="g.itemId" class="artifact-pick">
+                    <div class="artifact-pick-main">
+                      <img :src="itemIcon(g.itemId)" :alt="itemName(g.itemId)" class="mini-item" />
+                      <span class="artifact-name">{{ itemName(g.itemId) }}</span>
+                      <span class="muted tiny">均 {{ g.avgPlacement.toFixed(2) }} · 出现率 {{ (g.appearanceRate * 100).toFixed(1) }}%</span>
+                      <img v-for="c in g.carriers" :key="c.unit_id" :src="unitIcon(c.unit_id)" class="mini-unit" :title="unitName(c.unit_id) + (c.best ? ' ★' : '')" />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            <!-- 互害 / 受益 -->
+            <section v-if="selectedCompDetail.composition.matchups" class="board-section">
+              <h3>克制关系</h3>
+              <div class="matchup-list">
+                <div v-for="b in selectedCompDetail.composition.matchups.benefits" :key="b.key" class="matchup-row good">
+                  <span>受益对阵</span>
+                  <span>{{ compName(b.key) }}</span>
+                  <span class="muted">delta {{ b.delta.toFixed(3) }}</span>
+                </div>
+                <div v-for="c in selectedCompDetail.composition.matchups.counteredBy" :key="c.key" class="matchup-row bad">
+                  <span>被克制</span>
+                  <span>{{ compName(c.key) }}</span>
+                  <span class="muted">delta {{ c.delta.toFixed(3) }}</span>
+                </div>
+                <div v-for="m in selectedCompDetail.composition.matchups.mutualConstraints" :key="m.key" class="matchup-row neutral">
+                  <span>互相挤压</span>
+                  <span>{{ compName(m.key) }}</span>
+                  <span class="muted">delta {{ m.delta.toFixed(3) }}</span>
+                </div>
+                <p v-if="!selectedCompDetail.composition.matchups.benefits.length && !selectedCompDetail.composition.matchups.counteredBy.length && !selectedCompDetail.composition.matchups.mutualConstraints.length" class="empty" style="padding: 8px 0; text-align: left">无克制数据。</p>
+              </div>
+            </section>
+
+            <!-- 神器推荐 -->
+            <section v-if="selectedCompDetail.composition.artifactPicks && selectedCompDetail.composition.artifactPicks.picks.length" class="board-section">
+              <h3>神器推荐</h3>
+              <div class="artifact-picks">
+                <div v-for="p in selectedCompDetail.composition.artifactPicks.picks" :key="p.artifactId" class="artifact-pick">
+                  <div class="artifact-pick-main">
+                    <img :src="tfImg(p.artifactIcon)" :alt="p.artifactName" class="mini-item" />
+                    <span class="artifact-name">{{ p.artifactName }}</span>
+                    <span class="muted tiny">→</span>
+                    <img :src="tfImg(p.carrierIcon)" :alt="p.carrierName" class="mini-unit" />
+                    <span class="artifact-carrier">{{ p.carrierName }}</span>
+                    <span class="muted tiny">强度 {{ p.strength.toFixed(3) }}</span>
+                  </div>
+                  <div v-if="p.topPair" class="artifact-pair">
+                    <img v-for="it in p.topPair.items" :key="it.itemId" :src="tfImg(it.icon)" :alt="it.name" class="mini-item" :title="it.name" />
+                  </div>
+                </div>
+              </div>
+            </section>
+          </div>
+        </template>
+
+        <template v-else>
+          <template v-if="tftData">
           <section v-if="savedComps.length" class="board-section">
             <h3>已收藏 ({{ savedComps.length }})</h3>
             <div class="comp-grid">
@@ -2298,6 +2151,7 @@ onMounted(async () => {
           </section>
         </template>
         <p v-else-if="!metaLoading" class="empty">加载中…</p>
+        </template>
       </template>
 
       <!-- Meta 视图 -->
@@ -3918,124 +3772,6 @@ button.small {
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
   z-index: 100;
   backdrop-filter: blur(8px);
-}
-
-/* 悬浮窗 */
-.overlay {
-  position: relative;
-  height: 100vh;
-  background: rgba(19, 19, 28, 0.95);
-  color: var(--text);
-  padding: 13px 15px;
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  display: flex;
-  flex-direction: column;
-  gap: 11px;
-  overflow: hidden;
-  user-select: none;
-  backdrop-filter: blur(6px);
-}
-
-.overlay-header {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--green);
-  box-shadow: 0 0 8px var(--green);
-}
-
-.overlay-title {
-  font-weight: 700;
-  font-size: 14px;
-}
-
-.overlay-avg {
-  margin-left: auto;
-  color: var(--gold);
-  font-size: 12px;
-}
-
-.overlay-rank {
-  font-size: 12px;
-  font-weight: 700;
-  color: var(--gold-bright);
-}
-
-.overlay-lp {
-  margin-left: 6px;
-  color: var(--text);
-  font-weight: 600;
-}
-
-.overlay-winrate {
-  margin-left: 6px;
-  color: var(--green);
-  font-weight: 600;
-}
-
-.overlay-close {
-  background: transparent;
-  color: var(--faint);
-  border: none;
-  font-size: 14px;
-  padding: 0 4px;
-  cursor: pointer;
-  -webkit-app-region: no-drag;
-}
-
-.overlay-close:hover {
-  color: var(--text);
-}
-
-.overlay-places {
-  display: flex;
-  gap: 6px;
-  flex-wrap: wrap;
-}
-
-.place-badge {
-  width: 26px;
-  height: 26px;
-  border-radius: 7px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 13px;
-  font-weight: 700;
-  background: #2a2a3a;
-  color: var(--dim);
-}
-
-.place-badge.p1 {
-  background: rgba(240, 194, 75, 0.18);
-  color: var(--gold-bright);
-}
-
-.place-badge.p2 {
-  background: rgba(200, 205, 215, 0.14);
-  color: #c9cfda;
-}
-
-.place-badge.p3 {
-  background: rgba(205, 127, 50, 0.18);
-  color: #e0a469;
-}
-
-.overlay-empty {
-  color: var(--faint);
-  font-size: 12px;
-}
-
-.overlay-footer {
-  color: var(--faint);
-  font-size: 11px;
 }
 
 .search {
