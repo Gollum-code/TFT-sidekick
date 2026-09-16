@@ -442,6 +442,9 @@ const view = ref<
   | "builder"
   | "explorer"
   | "early"
+  | "traits"
+  | "augments"
+  | "compList"
 >("matches");
 const matches = ref<MatchSummary[]>([]);
 const info = ref<AppInfo | null>(null);
@@ -751,8 +754,16 @@ async function getMeta() {
   metaLoading.value = true;
   error.value = "";
   try {
-    const r = await invoke<TFTtableData>("get_tftable_data");
+    const [r, c, t, a] = await Promise.all([
+      invoke<TFTtableData>("get_tftable_data"),
+      invoke<ChampionData[]>("get_champions"),
+      invoke<TraitData[]>("get_traits"),
+      invoke<ItemData[]>("get_augments"),
+    ]);
     tftData.value = r;
+    champions.value = c;
+    traits.value = t;
+    augments.value = a;
     lastSync.value = r.sampleSize > 0 ? `${r.metaStats.metadata.patch} · ${r.sampleSize.toLocaleString()} 样本` : "";
   } catch (e) {
     error.value = String(e);
@@ -876,6 +887,119 @@ const explorerCompRows = computed(() => {
   );
 });
 
+// ===== 羁绊统计页 =====
+const traitSearch = ref("");
+const traitCountByCost = computed(() => {
+  const m: Record<string, { cost: number[]; count: number }> = {};
+  for (const ch of champions.value) {
+    for (const tr of ch.traits) {
+      (m[tr] ??= { cost: [], count: 0 });
+      m[tr].cost.push(ch.cost);
+      m[tr].count++;
+    }
+  }
+  return m;
+});
+const traitWinShareMap = computed(() => {
+  const m: Record<string, { win: number; top4: number; tier: number | null; unitsRequired: number | null }> = {};
+  if (!tftData.value) return m;
+  const ws = tftData.value.metaStats.winShare.traits;
+  const t4 = tftData.value.metaStats.top4Share.traits;
+  for (const t of ws) m[t.trait_id] = { win: t.wins, top4: 0, tier: t.tier, unitsRequired: t.units_required };
+  for (const t of t4) {
+    (m[t.trait_id] ??= { win: 0, top4: 0, tier: t.tier, unitsRequired: t.units_required }).top4 = t.wins;
+  }
+  return m;
+});
+// 每个羁绊关联的阵容
+const traitCompsMap = computed(() => {
+  const m: Record<string, string[]> = {};
+  if (!tftData.value) return m;
+  for (const slug of Object.keys(tftData.value.compDetails)) {
+    const trs = tftData.value.compDetails[slug].composition.overview.traits.map((t) => t.id);
+    for (const tr of trs) (m[tr] ??= []).push(slug);
+  }
+  return m;
+});
+const filteredTraitRows = computed(() => {
+  const q = traitSearch.value.toLowerCase();
+  return traits.value.filter(
+    (t) => !q || t.name.toLowerCase().includes(q) || t.id.toLowerCase().includes(q)
+  );
+});
+function traitCostPill(cost: number[]): string {
+  const costs = [...new Set(cost)].sort((a, b) => a - b);
+  return costs.map((c) => `${c}费`).join(" ");
+}
+
+// ===== 强化符文页 =====
+const augmentSearch = ref("");
+const augmentTier = ref<"all" | "silver" | "gold" | "prismatic">("all");
+const filteredAugmentRows = computed(() => {
+  const q = augmentSearch.value.toLowerCase();
+  return augments.value.filter((a) => !q || a.name.toLowerCase().includes(q));
+});
+function augmentTierLabel(id: string): string {
+  if (/silver/i.test(id)) return "白银";
+  if (/gold/i.test(id)) return "黄金";
+  if (/prismatic/i.test(id)) return "棱彩";
+  return "";
+}
+
+// ===== 阵容列表（预设 + 收藏） =====
+const savedComps = ref<string[]>([]);
+function loadSavedComps() {
+  try {
+    const raw = localStorage.getItem("tft_saved_comps");
+    savedComps.value = raw ? (JSON.parse(raw) as string[]) : [];
+  } catch {
+    savedComps.value = [];
+  }
+}
+function toggleSavedComp(slug: string) {
+  const i = savedComps.value.indexOf(slug);
+  if (i >= 0) savedComps.value.splice(i, 1);
+  else savedComps.value.push(slug);
+  try {
+    localStorage.setItem("tft_saved_comps", JSON.stringify(savedComps.value));
+  } catch {}
+}
+const savedCompDetail = computed(() => {
+  if (!savedComps.value.length) return [];
+  return savedComps.value
+    .map((slug) => ({ slug, card: cardOf(slug) }))
+    .filter((x) => x.card.slug === x.slug && x.card.display_name_cn !== x.slug);
+});
+
+// ===== 阵容构建器增强：羁绊激活 =====
+const builderActiveTraits = computed(() => {
+  if (builderSelected.value.length === 0) return [];
+  const chMap = new Map<string, ChampionData>();
+  for (const ch of champions.value) chMap.set(ch.id, ch);
+  const traitCount: Record<string, number> = {};
+  for (const id of builderSelected.value) {
+    const ch = chMap.get(id);
+    if (ch) for (const tr of ch.traits) traitCount[tr] = (traitCount[tr] ?? 0) + 1;
+  }
+  const out: { id: string; name: string; count: number; activeTier: number; totalTiers: number }[] = [];
+  for (const tr of traits.value) {
+    const cnt = traitCount[tr.id] ?? 0;
+    if (cnt === 0) continue;
+    let active = 0;
+    for (const t of tr.tiers) {
+      if (cnt >= t.min_units) active++;
+    }
+    out.push({
+      id: tr.id,
+      name: tr.name,
+      count: cnt,
+      activeTier: active,
+      totalTiers: tr.tiers.length,
+    });
+  }
+  return out.sort((a, b) => b.count - a.count);
+});
+
 const sortedComps = computed(() => {
   if (!tftData.value) return [];
   return [...tftData.value.compAtlas.compositionSummaries].sort((a, b) => a.avgPlacementValue - b.avgPlacementValue);
@@ -939,7 +1063,7 @@ function sortedBuckets(buckets: Record<string, { unitId: string; normalized: num
 }
 
 const navGroups: {
-  key: "matches" | "stats" | "comps" | "data" | "meta" | "builder" | "explorer" | "early";
+  key: "matches" | "stats" | "comps" | "data" | "meta" | "builder" | "explorer" | "early" | "traits" | "augments" | "compList";
   label: string;
   icon: string;
   go?: () => void;
@@ -948,9 +1072,12 @@ const navGroups: {
   { key: "matches", label: "对局历史", icon: "◉" },
   { key: "stats", label: "统计", icon: "▤" },
   { key: "comps", label: "阵容", icon: "♜" },
+  { key: "compList", label: "阵容列表", icon: "📋" },
   { key: "early", label: "前期", icon: "⚡" },
   { key: "builder", label: "阵容构建器", icon: "🔧" },
   { key: "explorer", label: "数据检索器", icon: "🔍" },
+  { key: "traits", label: "羁绊", icon: "🔗" },
+  { key: "augments", label: "强化符文", icon: "✨" },
   {
     key: "meta",
     label: "Meta总览",
@@ -1023,14 +1150,18 @@ function setView(
     | "meta"
     | "builder"
     | "explorer"
-    | "early",
+    | "early"
+    | "traits"
+    | "augments"
+    | "compList",
 ) {
   view.value = v;
   if (v === "stats") openStats();
   if (v === "data") openData();
-  if (v === "meta" || v === "comps" || v === "builder" || v === "explorer" || v === "early") {
+  if (v === "meta" || v === "comps" || v === "builder" || v === "explorer" || v === "early" || v === "traits" || v === "augments" || v === "compList") {
     getMeta();
   }
+  if (v === "compList") loadSavedComps();
 }
 
 function navGo(
@@ -1042,7 +1173,10 @@ function navGo(
     | "meta"
     | "builder"
     | "explorer"
-    | "early",
+    | "early"
+    | "traits"
+    | "augments"
+    | "compList",
   child?: { go: () => void },
 ) {
   setView(v);
@@ -1927,6 +2061,17 @@ onMounted(async () => {
                 {{ c }}费: <b>{{ builderCostCount[c] ?? 0 }}</b>
               </span>
             </div>
+            <section v-if="builderActiveTraits.length" class="board-section">
+              <h3>激活羁绊</h3>
+              <div class="builder-traits">
+                <div v-for="t in builderActiveTraits" :key="t.id" class="builder-trait">
+                  <span class="builder-trait-name">{{ t.name }}</span>
+                  <span class="builder-trait-count" :class="{ active: t.activeTier > 0 }">
+                    {{ t.count }} 位英雄 · {{ t.activeTier }}/{{ t.totalTiers }} 层
+                  </span>
+                </div>
+              </div>
+            </section>
             <section v-if="builderMatchingComps.length" class="board-section">
               <h3>匹配阵容</h3>
               <div class="meta-list">
@@ -2027,6 +2172,132 @@ onMounted(async () => {
             </div>
           </div>
         </template>
+      </template>
+
+      <!-- 羁绊统计视图 -->
+      <template v-else-if="view === 'traits'">
+        <header class="topbar">
+          <h2>羁绊统计</h2>
+          <input v-model="traitSearch" class="search-input" placeholder="搜索羁绊…" />
+        </header>
+        <template v-if="tftData">
+          <div class="trait-list">
+            <div v-for="t in filteredTraitRows" :key="t.id" class="trait-card">
+              <div class="champ-head">
+                <img v-if="t.icon_url" :src="t.icon_url" :alt="t.name" class="champ-icon" />
+                <div>
+                  <div class="champ-name">{{ t.name }}</div>
+                  <div class="champ-traits">{{ t.id }}</div>
+                </div>
+                <span v-if="traitWinShareMap[t.id]" class="trait-stat">
+                  登顶 {{ ((traitWinShareMap[t.id].win / tftData.metaStats.winShare.sample_size) * 100).toFixed(2) }}% ·
+                  前四 {{ ((traitWinShareMap[t.id].top4 / tftData.metaStats.top4Share.sample_size) * 100).toFixed(2) }}%
+                </span>
+              </div>
+              <div class="trait-tiers">
+                <span v-for="(tier, i) in t.tiers" :key="i" class="tier-pill">
+                  {{ tier.min_units }}{{ tier.max_units > tier.min_units ? "-" + tier.max_units : "" }}
+                </span>
+                <span v-if="traitCountByCost[t.id]" class="tier-pill">{{ traitCountByCost[t.id].count }} 英雄</span>
+                <span v-if="traitCountByCost[t.id]" class="tier-pill">{{ traitCostPill(traitCountByCost[t.id].cost) }}</span>
+              </div>
+              <div class="ability-desc">{{ t.desc }}</div>
+              <div v-if="t.units.length > 0" class="trait-units">
+                <img v-for="u in t.units.slice(0, 10)" :key="u.id" :src="u.icon_url" :alt="u.name" class="mini-unit" :title="u.name" />
+              </div>
+              <div v-if="traitCompsMap[t.id]?.length" class="unit-comps">
+                <span class="muted tiny">相关阵容:</span>
+                <span v-for="slug in traitCompsMap[t.id].slice(0, 8)" :key="slug" class="trait-chip" @click="showCompDetail(slug)">{{ compName(slug) }}</span>
+              </div>
+            </div>
+          </div>
+        </template>
+        <p v-else-if="!metaLoading" class="empty">加载中…</p>
+      </template>
+
+      <!-- 强化符文视图 -->
+      <template v-else-if="view === 'augments'">
+        <header class="topbar">
+          <h2>强化符文</h2>
+          <input v-model="augmentSearch" class="search-input" placeholder="搜索海克斯…" />
+        </header>
+        <div class="tabs tabs-group">
+          <button class="tab" :class="{ active: augmentTier === 'all' }" @click="augmentTier = 'all'">全部</button>
+          <button v-for="t in [{k:'silver',label:'白银'},{k:'gold',label:'黄金'},{k:'prismatic',label:'棱彩'}]" :key="t.k" class="tab" :class="{ active: augmentTier === t.k }" @click="augmentTier = t.k as any">{{ t.label }}</button>
+        </div>
+        <div class="augment-list">
+          <div v-for="a in filteredAugmentRows" :key="a.id" class="augment-card">
+            <img v-if="a.icon_url" :src="a.icon_url" :alt="a.name" class="craft-icon" />
+            <div class="craft-body">
+              <div class="craft-name">
+                {{ a.name }}
+                <span v-if="augmentTierLabel(a.id)" class="augment-tier">{{ augmentTierLabel(a.id) }}</span>
+              </div>
+              <div class="ability-desc">{{ a.desc || "—" }}</div>
+            </div>
+          </div>
+        </div>
+        <p v-if="filteredAugmentRows.length === 0" class="empty">没有匹配的海克斯</p>
+      </template>
+
+      <!-- 阵容列表视图 -->
+      <template v-else-if="view === 'compList'">
+        <header class="topbar">
+          <h2>阵容列表</h2>
+          <span class="muted">点击收藏 / 取消收藏阵容</span>
+        </header>
+        <template v-if="tftData">
+          <section v-if="savedComps.length" class="board-section">
+            <h3>已收藏 ({{ savedComps.length }})</h3>
+            <div class="comp-grid">
+              <div v-for="s in savedCompDetail" :key="s.slug" class="comp-card" @click="showCompDetail(s.slug)">
+                <div class="comp-card-head">
+                  <img :src="tfImg(s.card.compIcon)" :alt="s.card.display_name_cn" class="comp-card-icon" />
+                  <div class="comp-card-title">
+                    <span class="comp-card-name">{{ s.card.display_name_cn }}</span>
+                    <span class="comp-card-en muted">{{ s.card.display_name_en }}</span>
+                  </div>
+                </div>
+                <div class="comp-card-stats">
+                  <div class="comp-card-stat">
+                    <span class="comp-card-val">{{ s.card.averagePlacementValue.toFixed(2) }}</span>
+                    <span class="comp-card-lbl">AVP</span>
+                  </div>
+                </div>
+                <button class="ghost small" @click.stop="toggleSavedComp(s.slug)">✕ 移除</button>
+              </div>
+            </div>
+          </section>
+          <section class="board-section">
+            <h3>全部阵容</h3>
+            <div class="comp-grid">
+              <div v-for="c in tftData.compositionCards" :key="c.slug" class="comp-card" @click="showCompDetail(c.slug)">
+                <div class="comp-card-head">
+                  <img :src="tfImg(c.compIcon)" :alt="c.display_name_cn" class="comp-card-icon" />
+                  <div class="comp-card-title">
+                    <span class="comp-card-name">{{ c.display_name_cn }}</span>
+                    <span class="comp-card-en muted">{{ c.display_name_en }}</span>
+                  </div>
+                  <span class="comp-cost-tag">${{ c.compCost }}</span>
+                </div>
+                <div class="comp-card-stats">
+                  <div class="comp-card-stat">
+                    <span class="comp-card-val">{{ c.averagePlacementValue.toFixed(2) }}</span>
+                    <span class="comp-card-lbl">AVP</span>
+                  </div>
+                  <div class="comp-card-stat">
+                    <span class="comp-card-val">{{ (statOf(c.slug).playRate * 100).toFixed(2) }}%</span>
+                    <span class="comp-card-lbl">出场率</span>
+                  </div>
+                </div>
+                <button class="ghost small" :class="{ favorited: savedComps.includes(c.slug) }" @click.stop="toggleSavedComp(c.slug)">
+                  {{ savedComps.includes(c.slug) ? "★ 已收藏" : "☆ 收藏" }}
+                </button>
+              </div>
+            </div>
+          </section>
+        </template>
+        <p v-else-if="!metaLoading" class="empty">加载中…</p>
       </template>
 
       <!-- Meta 视图 -->
@@ -4930,6 +5201,31 @@ button.small {
   gap: 12px;
   min-height: 400px;
 }
+.builder-traits {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.builder-trait {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: #101018;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 6px 10px;
+  font-size: 12px;
+}
+.builder-trait-name {
+  color: var(--dim);
+}
+.builder-trait-count {
+  color: var(--green);
+  font-weight: 600;
+}
+.builder-trait-count.active {
+  color: var(--gold-bright);
+}
 .builder-sidebar {
   width: 280px;
   flex-shrink: 0;
@@ -5065,5 +5361,30 @@ button.small {
   display: flex;
   gap: 10px;
   margin-top: 4px;
+}
+
+/* ===== 羁绊统计 ===== */
+.trait-stat {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--gold-bright);
+  white-space: nowrap;
+}
+
+/* ===== 强化符文 ===== */
+.augment-tier {
+  font-size: 10px;
+  color: var(--gold-bright);
+  border: 1px solid rgba(240, 194, 75, 0.35);
+  border-radius: 4px;
+  padding: 1px 5px;
+  margin-left: 6px;
+  vertical-align: middle;
+}
+
+/* ===== 阵容列表收藏 ===== */
+button.favorited {
+  color: var(--gold-bright);
+  border-color: var(--gold);
 }
 </style>
