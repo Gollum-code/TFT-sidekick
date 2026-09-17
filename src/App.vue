@@ -1021,51 +1021,16 @@ const navGroups: {
   { key: "augments", label: "强化符文", icon: "✨" },
   {
     key: "meta",
-    label: "Meta总览",
+    label: "Meta数据",
     icon: "★",
-    go: () => {
-      metaTab.value = "overview";
-    },
-  },
-  {
-    key: "meta",
-    label: "阵容趋势",
-    icon: "📈",
-    go: () => {
-      metaTab.value = "trends";
-    },
-  },
-  {
-    key: "meta",
-    label: "每日数据",
-    icon: "📅",
-    go: () => {
-      metaTab.value = "daily";
-    },
-  },
-  {
-    key: "meta",
-    label: "装备梯队",
-    icon: "🗡",
-    go: () => {
-      metaTab.value = "tierlist";
-    },
-  },
-  {
-    key: "meta",
-    label: "按弈子",
-    icon: "🛡",
-    go: () => {
-      metaTab.value = "unitItems";
-    },
-  },
-  {
-    key: "meta",
-    label: "按装备",
-    icon: "🎒",
-    go: () => {
-      metaTab.value = "itemGuide";
-    },
+    children: [
+      { label: "Meta总览", go: () => (metaTab.value = "overview") },
+      { label: "阵容趋势", go: () => (metaTab.value = "trends") },
+      { label: "每日数据", go: () => (metaTab.value = "daily") },
+      { label: "装备梯队", go: () => (metaTab.value = "tierlist") },
+      { label: "按弈子", go: () => (metaTab.value = "unitItems") },
+      { label: "按装备", go: () => (metaTab.value = "itemGuide") },
+    ],
   },
   {
     key: "data",
@@ -1127,6 +1092,16 @@ function navGo(
 function navClick(g: (typeof navGroups)[number]) {
   setView(g.key);
   if (g.go) g.go();
+}
+
+// 手风琴式导航：点击分组标题折叠/展开
+const expandedGroups = ref<Record<string, boolean>>({ meta: true });
+function toggleNav(g: (typeof navGroups)[number]) {
+  if (g.children?.length) {
+    expandedGroups.value[g.label] = !expandedGroups.value[g.label];
+  } else {
+    navClick(g);
+  }
 }
 
 function pct(x: number) {
@@ -1250,22 +1225,22 @@ onMounted(async () => {
           v-for="g in navGroups"
           :key="g.label"
           class="nav-group"
-          :class="{ 'has-sub': g.children != null && g.children.length > 0 }"
+          :class="{ 'has-sub': g.children?.length, expanded: g.children?.length && expandedGroups[g.label] }"
         >
           <a
             class="nav-item"
             :class="{ active: view === g.key }"
-            @click="navClick(g)"
+            @click="toggleNav(g)"
           >
             <span class="nav-ico">{{ g.icon }}</span>{{ g.label }}
-            <span v-if="g.children && g.children.length" class="nav-caret">▾</span>
+            <span v-if="g.children?.length" class="nav-caret">{{ expandedGroups[g.label] ? '▾' : '▸' }}</span>
           </a>
-          <div v-if="g.children && g.children.length" class="nav-sub">
+          <div v-if="g.children?.length" class="nav-sub" :class="{ open: expandedGroups[g.label] }">
             <a
               v-for="c in g.children"
               :key="c.label"
               class="nav-sub-item"
-              @click="navGo(g.key as any, c)"
+              @click.stop="navGo(g.key as any, c)"
             >{{ c.label }}</a>
           </div>
         </div>
@@ -2157,7 +2132,14 @@ onMounted(async () => {
       <!-- Meta 视图 -->
       <template v-else-if="view === 'meta'">
         <header class="topbar">
-          <h2>数据</h2>
+          <h2>{{ ({
+            overview: 'Meta总览',
+            trends: '阵容趋势',
+            daily: '每日数据',
+            tierlist: '装备梯队',
+            unitItems: '按弈子',
+            itemGuide: '按装备',
+          })[metaTab] || 'Meta' }}</h2>
           <button @click="getMeta" :disabled="metaLoading">
             {{ metaLoading ? "加载中…" : "刷新" }}
           </button>
@@ -2167,26 +2149,6 @@ onMounted(async () => {
         <p v-if="error" class="error">{{ error }}</p>
 
         <template v-if="tftData">
-          <div class="tabs tabs-group">
-            <span class="tabs-group-label">数据</span>
-            <button
-              v-for="t in [
-                { key: 'overview', label: 'Meta总览' },
-                { key: 'trends', label: '阵容趋势' },
-                { key: 'daily', label: '每日数据' },
-                { key: 'tierlist', label: '装备梯队' },
-                { key: 'unitItems', label: '按弈子' },
-                { key: 'itemGuide', label: '按装备' },
-              ]"
-              :key="t.key"
-              class="tab"
-              :class="{ active: metaTab === t.key }"
-              @click="metaTab = t.key as any"
-            >
-              {{ t.label }}
-            </button>
-          </div>
-
           <!-- Meta 总览 -->
           <div v-if="metaTab === 'overview'">
             <div class="comp-stat-cards">
@@ -3014,16 +2976,6 @@ nav {
   position: relative;
 }
 
-.nav-group:hover > .nav-sub {
-  display: block;
-  animation: navFade 0.15s ease-out;
-}
-
-.nav-group:hover .nav-caret {
-  transform: rotate(180deg);
-  color: var(--gold);
-}
-
 .nav-caret {
   margin-left: auto;
   font-size: 10px;
@@ -3031,23 +2983,26 @@ nav {
   transition: transform 0.2s, color 0.2s;
 }
 
+.nav-group.expanded .nav-caret {
+  color: var(--gold);
+}
+
 .nav-sub {
-  display: none;
-  position: absolute;
-  left: calc(100% + 6px);
-  top: 0;
-  min-width: 150px;
-  background: #1a1a25;
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 6px;
-  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.5);
-  z-index: 200;
+  display: block;
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height 0.2s ease-out, padding 0.2s ease-out;
+  padding: 0 0;
+}
+
+.nav-sub.open {
+  max-height: 300px;
+  padding: 2px 0 4px;
 }
 
 .nav-sub-item {
   display: block;
-  padding: 8px 12px;
+  padding: 6px 12px 6px 36px;
   border-radius: 6px;
   color: var(--dim);
   font-size: 13px;
@@ -3058,17 +3013,6 @@ nav {
 .nav-sub-item:hover {
   background: rgba(240, 194, 75, 0.12);
   color: var(--gold-bright);
-}
-
-@keyframes navFade {
-  from {
-    opacity: 0;
-    transform: translateX(-4px);
-  }
-  to {
-    opacity: 1;
-    transform: translateX(0);
-  }
 }
 
 .nav-item {
