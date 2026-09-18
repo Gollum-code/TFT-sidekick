@@ -2925,6 +2925,8 @@ body {
   flex-direction: column;
   padding: 20px 14px;
   border-right: 1px solid var(--border);
+  overflow-y: auto;
+  min-height: 0;
 }
 
 .brand {
@@ -2970,6 +2972,7 @@ nav {
   flex-direction: column;
   gap: 4px;
   margin-top: 26px;
+  padding-bottom: 40px;
 }
 
 .nav-group {
@@ -3065,6 +3068,10 @@ nav {
 
 .sidebar-footer {
   margin-top: auto;
+  position: sticky;
+  bottom: 0;
+  background: var(--bg-side);
+  padding-top: 8px;
   display: flex;
   flex-direction: column;
   gap: 8px;
