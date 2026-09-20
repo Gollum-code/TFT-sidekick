@@ -607,25 +607,33 @@ function openDataTo(tab: "champions" | "traits" | "items", query: string) {
   search.value = query;
 }
 
-async function openData() {
+// ---- CDN 数据统一缓存加载 ----
+let cdnDataLoaded = false;
+async function ensureCdnData(force: boolean = false) {
+  if (cdnDataLoaded && !force) return;
+  const [c, t, a, i, o, r] = await Promise.all([
+    invoke<ChampionData[]>("get_champions"),
+    invoke<TraitData[]>("get_traits"),
+    invoke<ItemData[]>("get_augments"),
+    invoke<ItemData[]>("get_items"),
+    invoke<ShopOddsLevel[]>("get_shop_odds"),
+    invoke<RulesSection[]>("get_game_rules"),
+  ]);
+  champions.value = c;
+  traits.value = t;
+  augments.value = a;
+  items.value = i;
+  shopOdds.value = o;
+  gameRules.value = r;
+  cdnDataLoaded = true;
+}
+
+async function openData(force: boolean = false) {
   view.value = "data";
   dataLoading.value = true;
   error.value = "";
   try {
-    const [i, c, t, a, o, r] = await Promise.all([
-      invoke<ItemData[]>("get_items"),
-      invoke<ChampionData[]>("get_champions"),
-      invoke<TraitData[]>("get_traits"),
-      invoke<ItemData[]>("get_augments"),
-      invoke<ShopOddsLevel[]>("get_shop_odds"),
-      invoke<RulesSection[]>("get_game_rules"),
-    ]);
-    items.value = i;
-    champions.value = c;
-    traits.value = t;
-    augments.value = a;
-    shopOdds.value = o;
-    gameRules.value = r;
+    await ensureCdnData(force);
   } catch (e) {
     error.value = String(e);
   } finally {
@@ -706,20 +714,19 @@ const specialGroupsVisible = computed(() => {
   return sg.artifacts.length > 0 || sg.radiants.length > 0 || sg.emblems.length > 0;
 });
 
-async function getMeta() {
+// 数据缓存：同一会话只加载一次 tftable_data + CDragon，切视图不再重复下载
+let metaDataLoaded = false;
+async function getMeta(force: boolean = false) {
+  if (metaDataLoaded && !force && tftData.value) return;
   metaLoading.value = true;
   error.value = "";
   try {
-    const [r, c, t, a] = await Promise.all([
+    const [r] = await Promise.all([
       invoke<TFTtableData>("get_tftable_data"),
-      invoke<ChampionData[]>("get_champions"),
-      invoke<TraitData[]>("get_traits"),
-      invoke<ItemData[]>("get_augments"),
+      ensureCdnData(force),
     ]);
     tftData.value = r;
-    champions.value = c;
-    traits.value = t;
-    augments.value = a;
+    metaDataLoaded = true;
     lastSync.value = r.sampleSize > 0 ? `${r.metaStats.metadata.patch} · ${r.sampleSize.toLocaleString()} 样本` : "";
   } catch (e) {
     error.value = String(e);
@@ -835,6 +842,13 @@ const explorerCompRows = computed(() => {
 
 // ===== 羁绊统计页 =====
 const traitSearch = ref("");
+const _traitSearchQ = ref("");
+let _traitTimer = 0;
+function setTraitSearch(v: string) {
+  traitSearch.value = v;
+  clearTimeout(_traitTimer);
+  _traitTimer = setTimeout(() => (_traitSearchQ.value = v), 200);
+}
 const traitCountByCost = computed(() => {
   const m: Record<string, { cost: number[]; count: number }> = {};
   for (const ch of champions.value) {
@@ -868,7 +882,7 @@ const traitCompsMap = computed(() => {
   return m;
 });
 const filteredTraitRows = computed(() => {
-  const q = traitSearch.value.toLowerCase();
+  const q = _traitSearchQ.value.toLowerCase();
   return traits.value.filter(
     (t) => !q || t.name.toLowerCase().includes(q) || t.id.toLowerCase().includes(q)
   );
@@ -880,9 +894,16 @@ function traitCostPill(cost: number[]): string {
 
 // ===== 强化符文页 =====
 const augmentSearch = ref("");
+const _augmentSearchQ = ref("");
+let _augmentTimer = 0;
+function setAugmentSearch(v: string) {
+  augmentSearch.value = v;
+  clearTimeout(_augmentTimer);
+  _augmentTimer = setTimeout(() => (_augmentSearchQ.value = v), 200);
+}
 const augmentTier = ref<"all" | "silver" | "gold" | "prismatic">("all");
 const filteredAugmentRows = computed(() => {
-  const q = augmentSearch.value.toLowerCase();
+  const q = _augmentSearchQ.value.toLowerCase();
   return augments.value.filter((a) => !q || a.name.toLowerCase().includes(q));
 });
 function augmentTierLabel(id: string): string {
@@ -1174,6 +1195,8 @@ function fmtDate(s: string) {
 onMounted(async () => {
   loadMatches();
   loadInfo();
+  // 后台预加载 meta + CDN 数据，首次进入数据页无需等待
+  getMeta();
 
   await listen<MatchSummary | null>("match-ended", (e) => {
     loadMatches();
@@ -1384,7 +1407,7 @@ onMounted(async () => {
               <div class="champ-list cost-grid">
                 <div v-for="c in list" :key="c.id" class="champ-card" @click="openDataTo('champions', c.name)">
                   <div class="champ-head">
-                    <img v-if="c.icon_url" :src="c.icon_url" :alt="c.name" class="champ-icon" />
+                    <img loading="lazy" v-if="c.icon_url" :src="c.icon_url" :alt="c.name" class="champ-icon" />
                     <div class="champ-name">{{ c.name }}</div>
                   </div>
                 </div>
@@ -1397,7 +1420,7 @@ onMounted(async () => {
         <template v-else-if="dataTab === 'wisps'">
           <div class="augment-list">
             <div v-for="w in wisps" :key="w.id" class="augment-card">
-              <img v-if="w.icon_url" :src="w.icon_url" :alt="w.name" class="craft-icon" />
+              <img loading="lazy" v-if="w.icon_url" :src="w.icon_url" :alt="w.name" class="craft-icon" />
               <div class="craft-body">
                 <div class="craft-name">{{ w.name || w.id }}</div>
                 <div class="ability-desc">{{ w.desc || "—" }}</div>
@@ -1428,7 +1451,7 @@ onMounted(async () => {
             <h3>成品装备</h3>
             <div class="craft-list">
               <div v-for="item in filteredItems" :key="item.id" class="craft-item">
-                <img v-if="item.icon_url" :src="item.icon_url" :alt="item.name" class="craft-icon" />
+                <img loading="lazy" v-if="item.icon_url" :src="item.icon_url" :alt="item.name" class="craft-icon" />
                 <div class="craft-body">
                   <div class="craft-name">{{ item.name }}</div>
                   <div class="craft-recipe">
@@ -1453,7 +1476,7 @@ onMounted(async () => {
           <div class="champ-list">
             <div v-for="c in filteredChampions" :key="c.id" class="champ-card">
               <div class="champ-head">
-                <img v-if="c.icon_url" :src="c.icon_url" :alt="c.name" class="champ-icon" />
+                <img loading="lazy" v-if="c.icon_url" :src="c.icon_url" :alt="c.name" class="champ-icon" />
                 <div>
                   <div class="champ-name">
                     <span class="cost" :style="{ color: costColor(c.cost) }">{{ "★".repeat(c.cost) || "—" }}</span>
@@ -1478,7 +1501,7 @@ onMounted(async () => {
           <div class="trait-list">
             <div v-for="t in filteredTraits" :key="t.id" class="trait-card">
               <div class="champ-head">
-                <img v-if="t.icon_url" :src="t.icon_url" :alt="t.name" class="champ-icon" />
+                <img loading="lazy" v-if="t.icon_url" :src="t.icon_url" :alt="t.name" class="champ-icon" />
                 <div class="champ-name">{{ t.name }}</div>
               </div>
               <div class="trait-tiers">
@@ -1504,7 +1527,7 @@ onMounted(async () => {
         <template v-else-if="dataTab === 'augments'">
           <div class="augment-list">
             <div v-for="a in filteredAugments" :key="a.id" class="augment-card">
-              <img v-if="a.icon_url" :src="a.icon_url" :alt="a.name" class="craft-icon" />
+              <img loading="lazy" v-if="a.icon_url" :src="a.icon_url" :alt="a.name" class="craft-icon" />
               <div class="craft-body">
                 <div class="craft-name">{{ a.name }}</div>
                 <div class="ability-desc">{{ a.desc || "—" }}</div>
@@ -1618,7 +1641,7 @@ onMounted(async () => {
               <div class="comp-grid">
                 <div v-for="c in earlyComps[cost]" :key="c.slug" class="comp-card" @click="showCompDetail(c.slug)">
                   <div class="comp-card-head">
-                    <img :src="tfImg(c.compIcon)" :alt="c.display_name_cn" class="comp-card-icon" />
+                    <img loading="lazy" :src="tfImg(c.compIcon)" :alt="c.display_name_cn" class="comp-card-icon" />
                     <div class="comp-card-title">
                       <span class="comp-card-name">{{ c.display_name_cn }}</span>
                       <span class="comp-card-en muted">{{ c.display_name_en }}</span>
@@ -1639,6 +1662,7 @@ onMounted(async () => {
             </section>
           </div>
         </template>
+        <p v-else-if="!metaLoading" class="empty">加载中，请稍候…</p>
       </template>
 
       <!-- 阵容构建器视图 (Team Builder) -->
@@ -1720,7 +1744,7 @@ onMounted(async () => {
                 <button v-for="c in [1,2,3,4,5]" :key="c" class="tab" :class="{ active: explorerUnitCost === c }" @click="explorerUnitCost = c">{{ c }}费</button>
               </div>
             </div>
-            <div class="explorer-list">
+            <div v-if="explorerUnitRows.length" class="explorer-list">
               <div v-for="u in explorerUnitRows" :key="u.unitId" class="explorer-row">
                 <div class="explorer-head">
                   <img :src="unitIcon(u.unitId)" class="top-icon" />
@@ -1744,7 +1768,7 @@ onMounted(async () => {
           </div>
 
           <div v-if="explorerTab === 'items'">
-            <div class="explorer-list">
+            <div v-if="explorerItemRows.length" class="explorer-list">
               <div v-for="g in explorerItemRows" :key="g.itemId" class="explorer-row">
                 <div class="explorer-head">
                   <img :src="itemIcon(g.itemId)" class="top-icon" />
@@ -1767,7 +1791,7 @@ onMounted(async () => {
             <div class="explorer-filter">
               <input v-model="explorerCompSearch" class="search-input" placeholder="搜索阵容…" />
             </div>
-            <div class="explorer-list">
+            <div v-if="explorerCompRows.length" class="explorer-list">
               <div v-for="c in explorerCompRows" :key="c.slug" class="explorer-row comp-row" @click="showCompDetail(c.slug)">
                 <div class="explorer-head">
                   <img :src="compCardIcon(c.slug)" class="top-icon" />
@@ -1788,13 +1812,13 @@ onMounted(async () => {
       <template v-else-if="view === 'traits'">
         <header class="topbar">
           <h2>羁绊统计</h2>
-          <input v-model="traitSearch" class="search-input" placeholder="搜索羁绊…" />
+          <input @input="(e: any) => setTraitSearch((e.target as HTMLInputElement).value)" class="search-input" placeholder="搜索羁绊…" />
         </header>
         <template v-if="tftData">
           <div class="trait-list">
             <div v-for="t in filteredTraitRows" :key="t.id" class="trait-card">
               <div class="champ-head">
-                <img v-if="t.icon_url" :src="t.icon_url" :alt="t.name" class="champ-icon" />
+                <img loading="lazy" v-if="t.icon_url" :src="t.icon_url" :alt="t.name" class="champ-icon" />
                 <div>
                   <div class="champ-name">{{ t.name }}</div>
                   <div class="champ-traits">{{ t.id }}</div>
@@ -1829,7 +1853,7 @@ onMounted(async () => {
       <template v-else-if="view === 'augments'">
         <header class="topbar">
           <h2>强化符文</h2>
-          <input v-model="augmentSearch" class="search-input" placeholder="搜索海克斯…" />
+          <input @input="(e: any) => setAugmentSearch((e.target as HTMLInputElement).value)" class="search-input" placeholder="搜索海克斯…" />
         </header>
         <div class="tabs tabs-group">
           <button class="tab" :class="{ active: augmentTier === 'all' }" @click="augmentTier = 'all'">全部</button>
@@ -1837,7 +1861,7 @@ onMounted(async () => {
         </div>
         <div class="augment-list">
           <div v-for="a in filteredAugmentRows" :key="a.id" class="augment-card">
-            <img v-if="a.icon_url" :src="a.icon_url" :alt="a.name" class="craft-icon" />
+            <img loading="lazy" v-if="a.icon_url" :src="a.icon_url" :alt="a.name" class="craft-icon" />
             <div class="craft-body">
               <div class="craft-name">
                 {{ a.name }}
@@ -1936,7 +1960,7 @@ onMounted(async () => {
                   </div>
                   <div v-if="v.traits.length" class="variant-traits">
                     <span v-for="t in v.traits" :key="t.id" class="trait-chip">
-                      <img v-if="t.icon" :src="tfImg(t.icon)" :alt="traitName(t.id)" class="trait-icon-sm" />
+                      <img loading="lazy" v-if="t.icon" :src="tfImg(t.icon)" :alt="traitName(t.id)" class="trait-icon-sm" />
                       {{ t.unitsRequired }} {{ traitName(t.id) }}
                     </span>
                   </div>
@@ -2080,7 +2104,7 @@ onMounted(async () => {
             <div class="comp-grid">
               <div v-for="s in savedCompDetail" :key="s.slug" class="comp-card" @click="showCompDetail(s.slug)">
                 <div class="comp-card-head">
-                  <img :src="tfImg(s.card.compIcon)" :alt="s.card.display_name_cn" class="comp-card-icon" />
+                  <img loading="lazy" :src="tfImg(s.card.compIcon)" :alt="s.card.display_name_cn" class="comp-card-icon" />
                   <div class="comp-card-title">
                     <span class="comp-card-name">{{ s.card.display_name_cn }}</span>
                     <span class="comp-card-en muted">{{ s.card.display_name_en }}</span>
@@ -2101,7 +2125,7 @@ onMounted(async () => {
             <div class="comp-grid">
               <div v-for="c in tftData.compositionCards" :key="c.slug" class="comp-card" @click="showCompDetail(c.slug)">
                 <div class="comp-card-head">
-                  <img :src="tfImg(c.compIcon)" :alt="c.display_name_cn" class="comp-card-icon" />
+                  <img loading="lazy" :src="tfImg(c.compIcon)" :alt="c.display_name_cn" class="comp-card-icon" />
                   <div class="comp-card-title">
                     <span class="comp-card-name">{{ c.display_name_cn }}</span>
                     <span class="comp-card-en muted">{{ c.display_name_en }}</span>
@@ -2140,7 +2164,7 @@ onMounted(async () => {
             unitItems: '按弈子',
             itemGuide: '按装备',
           })[metaTab] || 'Meta' }}</h2>
-          <button @click="getMeta" :disabled="metaLoading">
+          <button @click="getMeta(true)" :disabled="metaLoading">
             {{ metaLoading ? "加载中…" : "刷新" }}
           </button>
         </header>
@@ -2608,7 +2632,7 @@ onMounted(async () => {
               <div class="unit-item-list">
                 <div v-for="u in tftData.unitItems" :key="u.unitId" class="unit-item-card">
                   <div class="champ-head">
-                    <img :src="unitIcon(u.unitId)" :alt="unitName(u.unitId)" class="champ-icon" />
+                    <img loading="lazy" :src="unitIcon(u.unitId)" :alt="unitName(u.unitId)" class="champ-icon" />
                     <span class="champ-name">{{ unitName(u.unitId) }}</span>
                     <span class="muted tiny" style="font-size:10px">{{ unitNameEn(u.unitId) }}</span>
                     <span class="muted tiny">${{ u.unitCost }}</span>
@@ -2666,7 +2690,7 @@ onMounted(async () => {
               <div class="item-guide-list">
                 <div v-for="g in currentItemGuide" :key="g.itemId" class="item-guide-card">
                   <div class="champ-head">
-                    <img :src="itemIcon(g.itemId)" :alt="itemName(g.itemId)" class="champ-icon" />
+                    <img loading="lazy" :src="itemIcon(g.itemId)" :alt="itemName(g.itemId)" class="champ-icon" />
                     <span class="champ-name">{{ itemName(g.itemId) }}</span>
                     <span class="muted tiny" style="font-size:10px">{{ g.itemName }}</span>
                   </div>
