@@ -1721,6 +1721,7 @@ onMounted(async () => {
             <p v-if="builderSelected.length === 0" class="empty">请在左侧选择弈子开始构建</p>
           </div>
         </div>
+        <p v-if="tftData === null && !metaLoading" class="empty">加载中，请稍候…</p>
       </template>
 
       <!-- 数据检索器视图 (Data Explorer) -->
@@ -1804,8 +1805,10 @@ onMounted(async () => {
                 </div>
               </div>
             </div>
+            <p v-if="explorerCompRows.length === 0" class="empty">没有匹配的阵容</p>
           </div>
         </template>
+        <p v-else-if="!metaLoading" class="empty">加载中，请稍候…</p>
       </template>
 
       <!-- 羁绊统计视图 -->
