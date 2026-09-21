@@ -48,6 +48,8 @@ interface EnrichedUnit {
   cost: number | null;
   tier: number | null;
   items: EnrichedItem[];
+  position_x?: number | null;
+  position_y?: number | null;
 }
 
 interface EnrichedTrait {
@@ -1216,6 +1218,20 @@ function back() {
   selected.value = null;
 }
 
+// 对局详情：按 position_x/y 构建棋盘布局（7列×4行）。
+// 无站位数据时返回 null，前端仅在有站位时显示棋盘。
+const matchBoard = computed(() => {
+  if (!selected.value || !selected.value.units.length) return null;
+  if (selected.value.units.every((u) => u.position_x == null || u.position_y == null)) return null;
+  const grid: Record<number, EnrichedUnit> = {};
+  for (const u of selected.value.units) {
+    const x = u.position_x ?? -1;
+    const y = u.position_y ?? -1;
+    if (x >= 0 && x < 7 && y >= 0 && y < 4) grid[y * 7 + x] = u;
+  }
+  return { grid, hasBoard: Object.keys(grid).length > 0 };
+});
+
 function costColor(cost: number | null) {
   return COST_COLORS[cost ?? 0] ?? "#fff";
 }
@@ -1233,6 +1249,14 @@ onMounted(async () => {
   // 后台预加载 meta + CDN 数据，首次进入数据页无需等待
   getMeta();
   startAutoRefresh();
+  // 启动后静默检查是否有新补丁（不打扰用户，仅在有更新时提示）
+  setTimeout(() => {
+    checkForUpdate().then(() => {
+      if (updateCheck.value.has_update && !updating.value) {
+        showToast(`检测到新版本 ${updateCheck.value.latest_patch}，可在「设置」中在线更新`);
+      }
+    });
+  }, 3000);
 
   await listen<MatchSummary | null>("match-ended", (e) => {
     loadMatches();
@@ -2926,6 +2950,23 @@ onMounted(async () => {
                     <img loading="lazy" v-if="it.icon_url" :src="it.icon_url" :alt="it.name" />
                     <span v-else class="item-fallback">{{ it.name || it.id }}</span>
                   </div>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <!-- 站位棋盘（仅在有站位数据时显示） -->
+          <section v-if="matchBoard && matchBoard.hasBoard" class="board-section">
+            <h3>站位</h3>
+            <div class="match-board">
+              <div
+                v-for="idx in 28"
+                :key="idx"
+                class="board-cell"
+              >
+                <div v-if="matchBoard.grid[idx - 1]" class="cell-unit">
+                  <img loading="lazy" :src="matchBoard.grid[idx - 1].icon_url || unitIcon(matchBoard.grid[idx - 1].character_id)" :alt="matchBoard.grid[idx - 1].name" class="cell-icon" :style="{ borderColor: costColor(matchBoard.grid[idx - 1].cost) }" />
+                  <span v-if="matchBoard.grid[idx - 1].tier" class="cell-stars">{{ "★".repeat(matchBoard.grid[idx - 1].tier!) }}</span>
                 </div>
               </div>
             </div>

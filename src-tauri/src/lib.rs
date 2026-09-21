@@ -555,6 +555,67 @@ async fn gameflow_loop(
     }
 }
 
+/// 保存窗口尺寸/位置到 window_state.json。
+fn save_window_state(window: &tauri::Window) -> tauri::Result<()> {
+    let size = match window.outer_size() {
+        Ok(s) => s,
+        Err(_) => return Ok(()),
+    };
+    let position = window.outer_position().ok();
+    let path = match window.app_handle().path().app_data_dir() {
+        Ok(d) => d.join("window_state.json"),
+        Err(_) => return Ok(()),
+    };
+    let (x, y) = match position {
+        Some(p) => (Some(p.x), Some(p.y)),
+        None => (None, None),
+    };
+    let state = serde_json::json!({
+        "width": size.width,
+        "height": size.height,
+        "x": x,
+        "y": y,
+    });
+    let _ = std::fs::create_dir_all(path.parent().unwrap());
+    let _ = std::fs::write(&path, state.to_string());
+    Ok(())
+}
+
+/// 启动时恢复窗口尺寸/位置（如果存在且是有效值）。
+fn restore_window_state(app: &tauri::AppHandle) {
+    let path = match app.path().app_data_dir() {
+        Ok(d) => d.join("window_state.json"),
+        Err(_) => return,
+    };
+    let raw = match std::fs::read_to_string(&path) {
+        Ok(s) => s,
+        Err(_) => return,
+    };
+    let v: serde_json::Value = match serde_json::from_str(&raw) {
+        Ok(v) => v,
+        Err(_) => return,
+    };
+    if let Some(w) = app.get_webview_window("main") {
+        if let (Some(wd), Some(h)) = (
+            v.get("width").and_then(|x| x.as_u64()),
+            v.get("height").and_then(|x| x.as_u64()),
+        ) {
+            if wd >= 400 && h >= 300 {
+                let _ = w.set_size(tauri::PhysicalSize {
+                    width: wd as u32,
+                    height: h as u32,
+                });
+            }
+        }
+        if let (Some(x), Some(y)) = (
+            v.get("x").and_then(|x| x.as_i64()),
+            v.get("y").and_then(|x| x.as_i64()),
+        ) {
+            let _ = w.set_position(tauri::PhysicalPosition { x: x as i32, y: y as i32 });
+        }
+    }
+}
+
 fn show_main_window(app: &AppHandle) {
     if let Some(window) = app.get_webview_window("main") {
         let _ = window.show();
@@ -627,6 +688,7 @@ pub fn run() {
             });
 
             setup_tray(app.handle())?;
+            restore_window_state(app.handle());
 
             let handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
@@ -638,6 +700,8 @@ pub fn run() {
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                 if window.label() == "main" {
+                    // 保存窗口尺寸/位置（下次启动恢复）
+                    let _ = save_window_state(window);
                     // 点关闭只隐藏到托盘，不退出进程。
                     let _ = window.hide();
                     api.prevent_close();

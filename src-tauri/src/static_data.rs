@@ -453,6 +453,8 @@ impl StaticData {
                     cost: champion.and_then(|c| c.cost),
                     tier: u.tier,
                     items,
+                    position_x: u.position_x,
+                    position_y: u.position_y,
                 }
             })
             .collect();

@@ -75,6 +75,8 @@ pub struct EnrichedUnit {
     pub cost: Option<i32>,
     pub tier: Option<i32>,
     pub items: Vec<EnrichedItem>,
+    pub position_x: Option<i32>,
+    pub position_y: Option<i32>,
 }
 
 #[derive(Debug, Clone, Serialize)]
