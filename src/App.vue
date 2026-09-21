@@ -684,6 +684,25 @@ async function checkForUpdate() {
   }
 }
 
+// 在线下载并重建 tftable_data.json
+const updating = ref(false);
+async function downloadUpdate() {
+  updating.value = true;
+  error.value = "";
+  try {
+    const r = await invoke<any>("update_tftable_data");
+    if (r.success) {
+      showToast(`数据已更新到 ${r.patch}（${r.sample_size.toLocaleString()} 样本）`);
+      await getMeta(true);
+      await checkForUpdate();
+    }
+  } catch (e) {
+    error.value = String(e);
+  } finally {
+    updating.value = false;
+  }
+}
+
 // ===== 名称映射（中文优先） =====
 function showCompDetail(slug: string) {
   selectedCompSlug.value = slug;
@@ -2222,6 +2241,9 @@ onMounted(async () => {
             <button class="ghost small" @click="checkForUpdate" :disabled="updateCheck.checking">
               {{ updateCheck.checking ? "检查中…" : "检查更新" }}
             </button>
+            <button class="ghost small" @click="downloadUpdate" :disabled="updating">
+              {{ updating ? "下载中…" : "在线下载最新数据" }}
+            </button>
             <button class="ghost small" @click="getMeta(true)" :disabled="metaLoading">
               {{ metaLoading ? "刷新中…" : "强制刷新数据" }}
             </button>
@@ -2232,7 +2254,7 @@ onMounted(async () => {
               <span class="settings-value">{{ updateCheck.latest_patch || '—' }}</span>
             </div>
             <div v-if="updateCheck.has_update" class="update-banner">
-              检测到新版本 {{ updateCheck.latest_patch }}（本地 {{ updateCheck.local_patch }}），请手动更新 tftable_data.json 或等待应用更新。
+              检测到新版本 {{ updateCheck.latest_patch }}（本地 {{ updateCheck.local_patch }}），点击「在线下载最新数据」自动更新。
             </div>
             <div v-else class="update-banner ok">数据已是最新版本。</div>
           </template>

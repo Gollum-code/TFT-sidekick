@@ -3,6 +3,7 @@ mod lcu;
 pub mod models;
 pub mod riot;
 pub mod static_data;
+pub mod updater;
 
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
@@ -300,6 +301,29 @@ async fn check_tftable_update(state: State<'_, AppState>) -> Result<serde_json::
         "latest_patch": latest_patch,
         "sample_size": sample_size,
         "updated_at": updated_at,
+    }))
+}
+
+/// 从 tftable.cc 抓取所有页面并重建 tftable_data.json（在线更新数据）。
+/// 返回保存结果：成功与否 + 文件路径。
+#[tauri::command]
+async fn update_tftable_data(state: State<'_, AppState>) -> Result<serde_json::Value, String> {
+    let new_data = updater::update_tftable_data().await?;
+
+    // 保存到 data_dir
+    let path = state
+        .meta_json_path
+        .parent()
+        .unwrap()
+        .join("tftable_data.json");
+    let json_str = serde_json::to_string_pretty(&new_data).map_err(|e| e.to_string())?;
+    std::fs::write(&path, &json_str).map_err(|e| format!("写入 tftable_data.json 失败: {e}"))?;
+
+    Ok(serde_json::json!({
+        "success": true,
+        "path": path.to_string_lossy(),
+        "patch": new_data.get("patch").and_then(|v| v.as_str()).unwrap_or(""),
+        "sample_size": new_data.get("sampleSize").and_then(|v| v.as_u64()).unwrap_or(0),
     }))
 }
 
@@ -635,6 +659,7 @@ pub fn run() {
             get_meta,
             get_tftable_data,
             check_tftable_update,
+            update_tftable_data,
             get_profile
         ])
         .run(tauri::generate_context!())
