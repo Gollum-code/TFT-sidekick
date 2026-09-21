@@ -432,6 +432,7 @@ const view = ref<
   | "traits"
   | "augments"
   | "compList"
+  | "settings"
 >("matches");
 const matches = ref<MatchSummary[]>([]);
 const info = ref<AppInfo | null>(null);
@@ -660,6 +661,28 @@ function unitIcon(id: string): string { return TF + "/set18/avatar-webp/" + id +
 function itemIcon(id: string): string { return TF + "/set18/item-webp/" + id + ".webp?v=4"; }
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 function traitIcon(id: string): string { return TF + "/set18/trait-svg/" + id + ".svg?v=1"; }
+
+// ===== 设置页 =====
+const updateCheck = ref<{
+  checking: boolean;
+  has_update: boolean;
+  local_patch: string | null;
+  latest_patch: string;
+  sample_size: number;
+  updated_at: string;
+}>({ checking: false, has_update: false, local_patch: null, latest_patch: "", sample_size: 0, updated_at: "" });
+
+async function checkForUpdate() {
+  updateCheck.value.checking = true;
+  error.value = "";
+  try {
+    const r = await invoke<any>("check_tftable_update");
+    updateCheck.value = { checking: false, ...r };
+  } catch (e) {
+    error.value = String(e);
+    updateCheck.value.checking = false;
+  }
+}
 
 // ===== 名称映射（中文优先） =====
 function showCompDetail(slug: string) {
@@ -1016,7 +1039,7 @@ function sortedBuckets(buckets: Record<string, { unitId: string; normalized: num
 }
 
 const navGroups: {
-  key: "matches" | "stats" | "comps" | "data" | "meta" | "builder" | "explorer" | "early" | "traits" | "augments" | "compList";
+  key: "matches" | "stats" | "comps" | "data" | "meta" | "builder" | "explorer" | "early" | "traits" | "augments" | "compList" | "settings";
   label: string;
   icon: string;
   go?: () => void;
@@ -1056,6 +1079,7 @@ const navGroups: {
       { label: "机制", go: () => (dataTab.value = "rules") },
     ],
   },
+  { key: "settings", label: "设置", icon: "⚙" },
 ];
 
 function setView(
@@ -1070,7 +1094,8 @@ function setView(
     | "early"
     | "traits"
     | "augments"
-    | "compList",
+    | "compList"
+    | "settings",
 ) {
   view.value = v;
   if (v === "stats") openStats();
@@ -1093,7 +1118,8 @@ function navGo(
     | "early"
     | "traits"
     | "augments"
-    | "compList",
+    | "compList"
+    | "settings",
   child?: { go: () => void },
 ) {
   setView(v);
@@ -1208,6 +1234,32 @@ onMounted(async () => {
       lcuSource.value = "";
     }
   });
+
+  // 托盘菜单「刷新数据」
+  await listen<string>("refresh-data", () => {
+    getMeta(true);
+  });
+
+  // 键盘快捷键：Ctrl/Cmd+数字 快速切换视图
+  const onKeydown = (e: KeyboardEvent) => {
+    if (!(e.ctrlKey || e.metaKey)) return;
+    const map: Record<string, any> = {
+      "1": "matches",
+      "2": "stats",
+      "3": "compList",
+      "4": "early",
+      "5": "builder",
+      "6": "explorer",
+      "7": "traits",
+      "8": "augments",
+    };
+    const v = map[e.key];
+    if (v) {
+      e.preventDefault();
+      setView(v);
+    }
+  };
+  window.addEventListener("keydown", onKeydown);
 });
 </script>
 
@@ -2144,6 +2196,67 @@ onMounted(async () => {
         </template>
         <p v-else-if="!metaLoading" class="empty">加载中…</p>
         </template>
+      </template>
+
+      <!-- 设置视图 -->
+      <template v-else-if="view === 'settings'">
+        <header class="topbar">
+          <h2>设置</h2>
+        </header>
+
+        <section class="board-section">
+          <h3>数据更新</h3>
+          <div class="settings-row">
+            <span class="settings-label">当前版本</span>
+            <span class="settings-value">{{ tftData?.patch || '—' }}</span>
+          </div>
+          <div class="settings-row">
+            <span class="settings-label">样本量</span>
+            <span class="settings-value">{{ tftData?.sampleSize?.toLocaleString() || '—' }}</span>
+          </div>
+          <div class="settings-row">
+            <span class="settings-label">更新时间</span>
+            <span class="settings-value">{{ tftData ? new Date(tftData.timestamp).toLocaleString("zh-CN") : '—' }}</span>
+          </div>
+          <div class="settings-row">
+            <button class="ghost small" @click="checkForUpdate" :disabled="updateCheck.checking">
+              {{ updateCheck.checking ? "检查中…" : "检查更新" }}
+            </button>
+            <button class="ghost small" @click="getMeta(true)" :disabled="metaLoading">
+              {{ metaLoading ? "刷新中…" : "强制刷新数据" }}
+            </button>
+          </div>
+          <template v-if="!updateCheck.checking && updateCheck.latest_patch">
+            <div class="settings-row">
+              <span class="settings-label">线上版本</span>
+              <span class="settings-value">{{ updateCheck.latest_patch || '—' }}</span>
+            </div>
+            <div v-if="updateCheck.has_update" class="update-banner">
+              检测到新版本 {{ updateCheck.latest_patch }}（本地 {{ updateCheck.local_patch }}），请手动更新 tftable_data.json 或等待应用更新。
+            </div>
+            <div v-else class="update-banner ok">数据已是最新版本。</div>
+          </template>
+        </section>
+
+        <section class="board-section">
+          <h3>键盘快捷键</h3>
+          <div class="settings-row"><span class="settings-label">Ctrl/Cmd + 1</span><span class="settings-value">对局历史</span></div>
+          <div class="settings-row"><span class="settings-label">Ctrl/Cmd + 2</span><span class="settings-value">统计</span></div>
+          <div class="settings-row"><span class="settings-label">Ctrl/Cmd + 3</span><span class="settings-value">阵容列表</span></div>
+          <div class="settings-row"><span class="settings-label">Ctrl/Cmd + 4</span><span class="settings-value">前期</span></div>
+          <div class="settings-row"><span class="settings-label">Ctrl/Cmd + 5</span><span class="settings-value">阵容构建器</span></div>
+          <div class="settings-row"><span class="settings-label">Ctrl/Cmd + 6</span><span class="settings-value">数据检索器</span></div>
+          <div class="settings-row"><span class="settings-label">Ctrl/Cmd + 7</span><span class="settings-value">羁绊</span></div>
+          <div class="settings-row"><span class="settings-label">Ctrl/Cmd + 8</span><span class="settings-value">强化符文</span></div>
+        </section>
+
+        <section class="board-section">
+          <h3>关于</h3>
+          <div class="settings-row"><span class="settings-label">应用</span><span class="settings-value">{{ info?.name }} v{{ info?.version }}</span></div>
+          <div class="settings-row"><span class="settings-label">数据库</span><span class="settings-value">{{ info?.db_path }}</span></div>
+          <div class="settings-row"><span class="settings-label">LCU</span><span class="settings-value">{{ info?.lcu_connected ? '已连接' : '未连接' }}</span></div>
+          <p class="hint" style="margin-top: 8px">数据来源：TFTable (tftable.cc) + CDragon。仅用于学习与娱乐，非 Riot 官方产品。</p>
+        </section>
       </template>
 
       <!-- Meta 视图 -->

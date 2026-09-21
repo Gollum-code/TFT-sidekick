@@ -228,6 +228,81 @@ fn get_tftable_data(state: State<'_, AppState>) -> Result<serde_json::Value, Str
     serde_json::from_str(&raw).map_err(|e| format!("tftable_data.json 格式错误: {e}"))
 }
 
+/// 检查 tftable.cc 上是否有更新的补丁数据。
+/// 抓取 https://tftable.cc/meta 的 __NEXT_DATA__，提取 patch 号 / 样本量 / 时间戳，
+/// 与本地 tftable_data.json 对比，返回是否有更新。
+#[tauri::command]
+async fn check_tftable_update(state: State<'_, AppState>) -> Result<serde_json::Value, String> {
+    // 本地当前 patch
+    let local_patch: Option<String> = {
+        let current = get_tftable_data(state).ok();
+        current
+            .as_ref()
+            .map(|v| v.get("metaStats").and_then(|m| m.get("metadata")))
+            .flatten()
+            .and_then(|m| m.get("patch").and_then(|p| p.as_str()))
+            .map(|s| s.to_string())
+    };
+
+    // 抓取 tftable.cc/meta 页面
+    let client = reqwest::Client::new();
+    let html = client
+        .get("https://tftable.cc/meta")
+        .header("User-Agent", "TFT-Sidekick/0.1")
+        .send()
+        .await
+        .map_err(|e| format!("网络请求失败: {e}"))?
+        .error_for_status()
+        .map_err(|e| e.to_string())?
+        .text()
+        .await
+        .map_err(|e| e.to_string())?;
+
+    // 提取 __NEXT_DATA__
+    let marker = r#"<script id="__NEXT_DATA__""#;
+    let start = html
+        .find(marker)
+        .and_then(|i| html[i..].find('>').map(|j| i + j + 1))
+        .ok_or("未找到 NEXT_DATA")?;
+    let end = html[start..]
+        .find("</script>")
+        .ok_or("NEXT_DATA 未闭合")?
+        + start;
+    let json: serde_json::Value =
+        serde_json::from_str(&html[start..end]).map_err(|e| format!("解析失败: {e}"))?;
+
+    let meta_stats = json
+        .pointer("/props/pageProps/metaStats")
+        .ok_or("metaStats 缺失")?;
+    let latest_patch = meta_stats
+        .pointer("/metadata/patch")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+    let sample_size = meta_stats
+        .pointer("/metadata/total_sample_size")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0);
+    let updated_at = meta_stats
+        .pointer("/metadata/timestamp")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+
+    let has_update = match &local_patch {
+        Some(local) => local != &latest_patch,
+        None => true,
+    };
+
+    Ok(serde_json::json!({
+        "has_update": has_update,
+        "local_patch": local_patch,
+        "latest_patch": latest_patch,
+        "sample_size": sample_size,
+        "updated_at": updated_at,
+    }))
+}
+
 /// 项目里的 meta.json（旧数据，保留兼容）。
 #[tauri::command]
 async fn get_meta(state: State<'_, AppState>) -> Result<MetaResult, String> {
@@ -465,8 +540,9 @@ fn show_main_window(app: &AppHandle) {
 
 fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
     let show = MenuItem::with_id(app, "show", "打开主界面", true, None::<&str>)?;
+    let refresh = MenuItem::with_id(app, "refresh", "刷新数据", true, None::<&str>)?;
     let quit = MenuItem::with_id(app, "quit", "退出", true, None::<&str>)?;
-    let menu = Menu::with_items(app, &[&show, &quit])?;
+    let menu = Menu::with_items(app, &[&show, &refresh, &quit])?;
 
     TrayIconBuilder::new()
         .icon(app.default_window_icon().unwrap().clone())
@@ -475,6 +551,9 @@ fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
         .show_menu_on_left_click(false)
         .on_menu_event(|app, event| match event.id.as_ref() {
             "show" => show_main_window(app),
+            "refresh" => {
+                let _ = app.emit("refresh-data", "");
+            }
             "quit" => app.exit(0),
             _ => {}
         })
@@ -555,6 +634,7 @@ pub fn run() {
             get_game_rules,
             get_meta,
             get_tftable_data,
+            check_tftable_update,
             get_profile
         ])
         .run(tauri::generate_context!())
