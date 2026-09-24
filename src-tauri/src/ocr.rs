@@ -26,33 +26,71 @@ pub enum OcrError {
 }
 
 /// 定位英雄联盟游戏窗口并截图指定区域。
-/// `title_keyword` 用于匹配窗口标题（默认 "League of Legends"）。
-/// `region` 传 `(x, y, w, h)` 相对窗口客户区；None 时截全客户区。
+/// 窗口查找：按进程名（LeagueClientUx/LeagueClient/LeagueClientUxRender/League of Legends）
+/// 枚举顶层窗口，取 client 区域面积最大的一个（TFT 对局画面在客户端内渲染）。
+/// `region` 传 `(x, y, w, h)`：0..100 = 窗口宽高百分比，>100 = 像素，-1 = 未指定。
+/// `scale` 为图像放大倍数（放大后再送 OCR，提高小字识别率）。
 pub fn capture_game_window(
     save_path: &Path,
-    title_keyword: &str,
     region: Option<(i32, i32, i32, i32)>,
+    scale: f64,
 ) -> Result<(), OcrError> {
     let ps = r##"
-param($OutPath, $TitleKeyword, $RegionX, $RegionY, $RegionW, $RegionH)
+param($OutPath, $RegionX, $RegionY, $RegionW, $RegionH, $Scale)
 Add-Type -AssemblyName System.Drawing | Out-Null
 Add-Type -AssemblyName System.Windows.Forms | Out-Null
 Add-Type @"
 using System;
+using System.Collections.Generic;
 using System.Runtime.InteropServices;
 public class Win32 {
-    [DllImport("user32.dll")] public static extern IntPtr FindWindow(string cls, string title);
+    public delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
+    [DllImport("user32.dll")] public static extern bool EnumWindows(EnumWindowsProc lpEnumFunc, IntPtr lParam);
+    [DllImport("user32.dll")] public static extern int GetWindowText(IntPtr hWnd, System.Text.StringBuilder sb, int maxCount);
+    [DllImport("user32.dll")] public static extern int GetWindowTextLength(IntPtr hWnd);
     [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr h, out RECT r);
     [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr h);
     [DllImport("user32.dll")] public static extern bool IsIconic(IntPtr h);
     [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr h, int cmd);
     [DllImport("user32.dll")] public static extern bool ClientToScreen(IntPtr h, out POINT p);
     [DllImport("user32.dll")] public static extern bool GetClientRect(IntPtr h, out RECT r);
+    [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr h);
+    [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint pid);
     public struct RECT { public int L, T, R, B; }
     public struct POINT { public int X, Y; }
 }
 "@
-$hwnd = [Win32]::FindWindow($null, $TitleKeyword)
+# 按进程名找英雄联盟客户端/游戏窗口（覆盖国服/国际服）。
+# TFT 对局画面在 LeagueClientUx 内渲染（无独立游戏窗口），且窗口可见性
+# 探测不可靠；直接取所有相关进程中 client 区域面积最大的窗口。
+function Find-LolWindow {
+  $procIds = @()
+  foreach ($name in @("LeagueClientUx", "LeagueClient", "LeagueClientUxRender", "League of Legends")) {
+    Get-Process -Name $name -ErrorAction SilentlyContinue | ForEach-Object { $procIds += $_.Id }
+  }
+  if ($procIds.Count -eq 0) { return [IntPtr]::Zero }
+  $script:procIds = $procIds
+  $script:best = [IntPtr]::Zero
+  $script:bestArea = -1
+  $callback = [Win32+EnumWindowsProc]{
+    param($hWnd, $lParam)
+    $winPid = 0
+    [Win32]::GetWindowThreadProcessId($hWnd, [ref]$winPid) | Out-Null
+    if ($script:procIds -contains $winPid) {
+      $cr = New-Object Win32+RECT
+      [Win32]::GetClientRect($hWnd, [ref]$cr) | Out-Null
+      $w = $cr.R - $cr.L; $h = $cr.B - $cr.T
+      if ($w -gt 0 -and $h -gt 0) {
+        $area = $w * $h
+        if ($area -gt $script:bestArea) { $script:best = $hWnd; $script:bestArea = $area }
+      }
+    }
+    return $true
+  }
+  [Win32]::EnumWindows($callback, [IntPtr]::Zero) | Out-Null
+  return $script:best
+}
+$hwnd = Find-LolWindow
 if ($hwnd -eq [IntPtr]::Zero) { exit 1 }
 # 如果最小化则先恢复
 if ([Win32]::IsIconic($hwnd)) { [Win32]::ShowWindow($hwnd, 9) | Out-Null; Start-Sleep -Milliseconds 300 }
@@ -68,16 +106,34 @@ $absY = $pt.Y
 $cw = $rect.R - $rect.L
 $ch = $rect.B - $rect.T
 if ($cw -le 0 -or $ch -le 0) { exit 2 }
-# 区域：未指定则全客户区
-$x = if ($RegionX -ge 0) { $absX + $RegionX } else { $absX }
-$y = if ($RegionY -ge 0) { $absY + $RegionY } else { $absY }
-$w = if ($RegionW -gt 0) { $RegionW } else { $cw }
-$h = if ($RegionH -gt 0) { $RegionH } else { $ch }
+# 区域：参数 0..100 = 窗口宽高百分比；-1 = 未指定（全客户区）
+function Px($val, $span, $default) {
+  if ($val -ge 0 -and $val -le 100) { return [int]($span * $val / 100.0) }
+  if ($val -gt 100) { return [int]$val }
+  return $default
+}
+$x = $absX + (Px $RegionX $cw 0)
+$y = $absY + (Px $RegionY $ch 0)
+$w = Px $RegionW $cw $cw
+$h = Px $RegionH $ch $ch
 # 截图
 $bmp = New-Object System.Drawing.Bitmap($w, $h)
 $g = [System.Drawing.Graphics]::FromImage($bmp)
 $g.CopyFromScreen($x, $y, 0, 0, (New-Object System.Drawing.Size($w, $h)))
-$bmp.Save($OutPath, [System.Drawing.Imaging.ImageFormat]::Png)
+# 放大（默认 2 倍，提高 OCR 小字识别率）
+$scale = if ($Scale -gt 0) { $Scale } else { 2.0 }
+if ($scale -gt 1.0) {
+  $sw = [int][Math]::Round($w * $scale)
+  $sh = [int][Math]::Round($h * $scale)
+  $big = New-Object System.Drawing.Bitmap($sw, $sh)
+  $bg = [System.Drawing.Graphics]::FromImage($big)
+  $bg.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
+  $bg.DrawImage($bmp, 0, 0, $sw, $sh)
+  $big.Save($OutPath, [System.Drawing.Imaging.ImageFormat]::Png)
+  $bg.Dispose(); $big.Dispose()
+} else {
+  $bmp.Save($OutPath, [System.Drawing.Imaging.ImageFormat]::Png)
+}
 $g.Dispose(); $bmp.Dispose()
 exit 0
 "##;
@@ -86,11 +142,11 @@ exit 0
         .args(["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command"])
         .arg(ps)
         .arg(save_path.to_str().unwrap_or(""))
-        .arg(title_keyword)
         .arg(region.map(|r| r.0.to_string()).unwrap_or_else(|| "-1".into()))
         .arg(region.map(|r| r.1.to_string()).unwrap_or_else(|| "-1".into()))
         .arg(region.map(|r| r.2.to_string()).unwrap_or_else(|| "0".into()))
         .arg(region.map(|r| r.3.to_string()).unwrap_or_else(|| "0".into()))
+        .arg(scale.to_string())
         .output()
         .map_err(|e| OcrError::Capture(e.to_string()))?;
 

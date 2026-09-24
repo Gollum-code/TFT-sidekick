@@ -569,11 +569,22 @@ async fn gameflow_loop(
                     let _ = app.emit("overlay-phase", "EndOfGame");
                     // 清理实时状态
                     let _ = app.emit("overlay-live", LiveGameState::default());
+                    // 对局结束自动收起悬浮窗
+                    if let Some(w) = app.get_webview_window("overlay") {
+                        if w.is_visible().unwrap_or(false) {
+                            let _ = w.hide();
+                        }
+                    }
                 }
 
-                // 进入对局：通知 overlay
+                // 进入对局：通知 overlay 并自动弹出
                 if p == "InProgress" && prev_phase != "InProgress" {
                     let _ = app.emit("overlay-phase", "InProgress");
+                    if let Some(w) = app.get_webview_window("overlay") {
+                        if !w.is_visible().unwrap_or(true) {
+                            let _ = w.show();
+                        }
+                    }
                 }
                 prev_phase = p;
             }
@@ -720,16 +731,16 @@ fn toggle_overlay(app: AppHandle) -> Result<bool, String> {
 }
 
 /// 截图游戏窗口商店区域并 OCR 识别文字（Windows 自带 OCR，零依赖）。
-/// 商店 5 格位于游戏窗口客户区底部中间；按 1080p 布局截取底部一条。
+/// 商店 5 格位于游戏窗口客户区底部中间；按百分比定位以适配任意分辨率/无边框窗口。
 /// 返回识别出的整段文本（棋子名之间有空白，前端模糊匹配）。
 #[tauri::command]
 fn ocr_shop_screen() -> Result<String, String> {
     let dir = std::env::temp_dir().join("tft-sidekick-ocr");
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     let png = dir.join("shop_capture.png");
-    // 商店区域（相对客户区，1080p）：y≈880..1020，x≈300..1620（5 格）。
-    // 其它分辨率按窗口高度等比例缩放。
-    ocr::capture_game_window(&png, "League of Legends", Some((300, 880, 1320, 150)))
+    // 商店区域（百分比，相对客户区）：横向 15%~85%，纵向 86%~100%（底部一条）。
+    // 2 倍放大后再 OCR，提高棋子名小字识别率。
+    ocr::capture_game_window(&png, Some((15, 86, 70, 14)), 2.0)
         .map_err(|e| e.to_string())?;
     let text = ocr::ocr_image(&png).map_err(|e| e.to_string())?;
     Ok(text)
