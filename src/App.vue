@@ -2213,6 +2213,21 @@ onMounted(async () => {
         <span class="titlebar-logo">◈</span>
         <span class="titlebar-title">TFT Sidekick</span>
       </div>
+      <div class="titlebar-center" data-tauri-drag-region="false">
+        <span class="tb-chip" :class="summoner ? 'ok' : 'off'">
+          <span class="tb-dot"></span>{{ summoner ? `${summoner.game_name}` : '未连接' }}
+        </span>
+        <span v-if="stats && stats.total" class="tb-chip" title="近 N 局战绩">
+          {{ stats.total }}局 · 前四 {{ pct(stats.top4_rate) }} · 均名 {{ stats.avg_placement.toFixed(2) }}
+        </span>
+        <span v-else-if="live.available" class="tb-chip live">
+          对局中 {{ live.stage || "" }} · {{ live.level ?? "—" }}级
+        </span>
+        <button class="tb-btn" title="同步战绩" @click="sync" :disabled="loading">
+          {{ loading ? "同步中" : "同步" }}
+        </button>
+        <button class="tb-btn" title="游戏内悬浮窗 (Ctrl+0)" @click="toggleOverlay">悬浮窗</button>
+      </div>
       <div class="titlebar-controls" data-tauri-drag-region="false">
         <button class="titlebar-btn" title="最小化" @click="minWin">─</button>
         <button class="titlebar-btn" title="最大化" @click="maxWin">□</button>

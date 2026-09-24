@@ -125,6 +125,67 @@ body {
   color: #fff;
 }
 
+/* 标题栏中央：状态摘要 + 快捷操作 */
+.titlebar-center {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  -webkit-app-region: no-drag;
+}
+.tb-chip {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  color: var(--dim);
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  padding: 3px 8px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+.tb-chip.ok {
+  color: var(--green);
+}
+.tb-chip.off {
+  color: var(--red);
+}
+.tb-chip.live {
+  color: var(--gold);
+  border-color: rgba(240, 194, 75, 0.25);
+}
+.tb-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: 0.8;
+}
+.tb-btn {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: var(--dim);
+  font-size: 11px;
+  padding: 3px 9px;
+  border-radius: 6px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.tb-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--text);
+}
+.tb-btn:disabled {
+  opacity: 0.5;
+  cursor: wait;
+}
+@media (max-width: 720px) {
+  .titlebar-center {
+    display: none;
+  }
+}
+
 .shell {
   display: flex;
   flex: 1;
@@ -324,6 +385,7 @@ nav {
 .content {
   flex: 1;
   overflow-y: auto;
+  overflow-x: hidden;
   padding: 28px 32px;
   min-width: 0;
 }
@@ -1788,6 +1850,17 @@ button.small {
 @media (max-width: 1000px) {
   .two-col {
     grid-template-columns: 1fr;
+  }
+  .content {
+    padding: 22px 20px;
+  }
+  .sidebar {
+    width: 180px;
+    padding: 16px 10px;
+  }
+  .stat-cards,
+  .comp-stat-cards {
+    grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
   }
 }
 

@@ -720,16 +720,16 @@ fn toggle_overlay(app: AppHandle) -> Result<bool, String> {
 }
 
 /// 截图游戏窗口商店区域并 OCR 识别文字（Windows 自带 OCR，零依赖）。
-/// 返回识别出的文本，供前端 fuzzy-match 商店棋子。
+/// 商店 5 格位于游戏窗口客户区底部中间；按 1080p 布局截取底部一条。
+/// 返回识别出的整段文本（棋子名之间有空白，前端模糊匹配）。
 #[tauri::command]
 fn ocr_shop_screen() -> Result<String, String> {
     let dir = std::env::temp_dir().join("tft-sidekick-ocr");
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     let png = dir.join("shop_capture.png");
-    // 商店区域：屏幕底部中间一条（多数 1080p/1440p 布局通用）。
-    // 1920x1080 客户区商店约在 y 920..1010，x 320..1600。
-    // 这里用窗口客户区相对坐标，OCR 前先全窗口截图判断。
-    ocr::capture_game_window(&png, "League of Legends", Some((0, 0, 0, 0)))
+    // 商店区域（相对客户区，1080p）：y≈880..1020，x≈300..1620（5 格）。
+    // 其它分辨率按窗口高度等比例缩放。
+    ocr::capture_game_window(&png, "League of Legends", Some((300, 880, 1320, 150)))
         .map_err(|e| e.to_string())?;
     let text = ocr::ocr_image(&png).map_err(|e| e.to_string())?;
     Ok(text)
