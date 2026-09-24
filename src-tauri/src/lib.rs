@@ -1,5 +1,7 @@
 mod db;
 mod lcu;
+mod live_client;
+mod ocr;
 pub mod models;
 pub mod riot;
 pub mod static_data;
@@ -13,15 +15,18 @@ use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent}
 use tauri::{AppHandle, Emitter, Manager, State};
 
 use crate::lcu::LcuClient;
+use crate::live_client::GameClientReader;
 use crate::models::{
-    AppInfo, ChampionData, EnrichedMatch, ItemData, MatchSummary, HeroItemRow, MetaComp, MetaItem,
-    MetaResult, NamedCount, Profile, RulesSection, ShopOddsLevel, Stats, SyncResult, TraitData,
+    AppInfo, ChampionData, EnrichedMatch, ItemData, MatchSummary, HeroItemRow, LiveGameState,
+    MetaComp, MetaItem, MetaResult, NamedCount, Profile, RulesSection, ShopOddsLevel, Stats,
+    SyncResult, TraitData,
 };
 use crate::static_data::StaticData;
 
 struct AppState {
     db: Arc<Mutex<db::Database>>,
     lcu: Arc<tokio::sync::Mutex<LcuClient>>,
+    game_client: GameClientReader,
     static_data: Arc<tokio::sync::Mutex<Option<Arc<StaticData>>>>,
     data_dir: PathBuf,
     meta_json_path: PathBuf,
@@ -453,6 +458,16 @@ async fn get_profile(state: State<'_, AppState>) -> Result<Profile, String> {
     })
 }
 
+/// 读取当前对局即时状态（2999 Game Client API）。不在对局中返回 available=false。
+#[tauri::command]
+async fn get_live_state(state: State<'_, AppState>) -> Result<LiveGameState, String> {
+    Ok(state
+        .game_client
+        .read_state()
+        .await
+        .unwrap_or_default())
+}
+
 async fn do_sync(
     lcu: &Arc<tokio::sync::Mutex<LcuClient>>,
     db: &Arc<Mutex<db::Database>>,
@@ -498,6 +513,7 @@ async fn gameflow_loop(
     app: AppHandle,
     lcu: Arc<tokio::sync::Mutex<LcuClient>>,
     db: Arc<Mutex<db::Database>>,
+    game_client: GameClientReader,
 ) {
     let mut prev_phase = String::new();
     let mut connected = false;
@@ -524,6 +540,14 @@ async fn gameflow_loop(
                     }
                 }
 
+                // 对局中：轮询 2999 实时状态并推送给 overlay / 主窗口。
+                // read_state 内部并行请求，任一失败返回 None；无需再单独探测 available。
+                if p == "InProgress" {
+                    if let Some(live) = game_client.read_state().await {
+                        let _ = app.emit("overlay-live", live);
+                    }
+                }
+
                 // 对局结束：InProgress -> 其它阶段
                 if prev_phase == "InProgress" && p != "InProgress" {
                     if let Ok(sr) = do_sync(&lcu, &db).await {
@@ -541,6 +565,15 @@ async fn gameflow_loop(
                             let _ = app.emit("match-ended", latest);
                         }
                     }
+                    // 通知 overlay：对局结束
+                    let _ = app.emit("overlay-phase", "EndOfGame");
+                    // 清理实时状态
+                    let _ = app.emit("overlay-live", LiveGameState::default());
+                }
+
+                // 进入对局：通知 overlay
+                if p == "InProgress" && prev_phase != "InProgress" {
+                    let _ = app.emit("overlay-phase", "InProgress");
                 }
                 prev_phase = p;
             }
@@ -616,6 +649,72 @@ fn restore_window_state(app: &tauri::AppHandle) {
     }
 }
 
+/// 游戏内辅助悬浮窗：创建 or 显示/隐藏。
+#[tauri::command]
+fn toggle_overlay(app: AppHandle) -> Result<bool, String> {
+    let Some(w) = app.get_webview_window("overlay") else {
+        return Err("overlay 窗口未定义".into());
+    };
+    if w.is_visible().unwrap_or(false) {
+        let _ = w.hide();
+        Ok(false)
+    } else {
+        let _ = w.show();
+        let _ = w.set_focus();
+        Ok(true)
+    }
+}
+
+/// 截图游戏窗口商店区域并 OCR 识别文字（Windows 自带 OCR，零依赖）。
+/// 返回识别出的文本，供前端 fuzzy-match 商店棋子。
+#[tauri::command]
+fn ocr_shop_screen() -> Result<String, String> {
+    let dir = std::env::temp_dir().join("tft-sidekick-ocr");
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let png = dir.join("shop_capture.png");
+    // 商店区域：屏幕底部中间一条（多数 1080p/1440p 布局通用）。
+    // 1920x1080 客户区商店约在 y 920..1010，x 320..1600。
+    // 这里用窗口客户区相对坐标，OCR 前先全窗口截图判断。
+    ocr::capture_game_window(&png, "League of Legends", Some((0, 0, 0, 0)))
+        .map_err(|e| e.to_string())?;
+    let text = ocr::ocr_image(&png).map_err(|e| e.to_string())?;
+    Ok(text)
+}
+
+/// 更新 overlay 中显示的对局状态（由 gameflow_loop 调用）。
+#[tauri::command]
+async fn set_overlay_state(state: State<'_, AppState>, app: AppHandle) -> Result<serde_json::Value, String> {
+    let phase = {
+        let mut lcu = state.lcu.lock().await;
+        if !lcu.is_connected() {
+            lcu.discover_and_connect().map_err(|e| e.to_string())?;
+        }
+        lcu.gameflow_phase().await.map_err(|e| e.to_string())?
+    };
+    let rank = {
+        let lcu = state.lcu.lock().await;
+        lcu.ranked_stats().await.map_err(|e| e.to_string())?
+    };
+    let me = {
+        let lcu = state.lcu.lock().await;
+        lcu.current_summoner().await.map_err(|e| e.to_string())?
+    };
+    let _ = app.emit("overlay-state", serde_json::json!({
+        "phase": phase,
+        "summoner": me.game_name,
+        "rank_tier": rank.tier,
+        "rank_division": rank.division,
+        "rank_lp": rank.league_points,
+    }));
+    Ok(serde_json::json!({
+        "phase": phase,
+        "summoner": me.game_name,
+        "rank_tier": rank.tier,
+        "rank_division": rank.division,
+        "rank_lp": rank.league_points,
+    }))
+}
+
 fn show_main_window(app: &AppHandle) {
     if let Some(window) = app.get_webview_window("main") {
         let _ = window.show();
@@ -666,6 +765,8 @@ pub fn run() {
 
             let db = Arc::new(Mutex::new(database));
             let lcu = Arc::new(tokio::sync::Mutex::new(LcuClient::new()));
+            let game_client = GameClientReader::new();
+            let game_client_loop = game_client.clone();
             let static_data = Arc::new(tokio::sync::Mutex::new(None::<Arc<StaticData>>));
 
             // 定位 meta.json：优先项目根目录（开发/工具生成处），否则数据目录
@@ -682,6 +783,7 @@ pub fn run() {
             app.manage(AppState {
                 db: db.clone(),
                 lcu: lcu.clone(),
+                game_client,
                 static_data: static_data.clone(),
                 data_dir: data_dir.clone(),
                 meta_json_path,
@@ -692,7 +794,7 @@ pub fn run() {
 
             let handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
-                gameflow_loop(handle, lcu, db).await;
+                gameflow_loop(handle, lcu, db, game_client_loop).await;
             });
 
             Ok(())
@@ -724,7 +826,11 @@ pub fn run() {
             get_tftable_data,
             check_tftable_update,
             update_tftable_data,
-            get_profile
+            get_profile,
+            toggle_overlay,
+            set_overlay_state,
+            get_live_state,
+            ocr_shop_screen
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

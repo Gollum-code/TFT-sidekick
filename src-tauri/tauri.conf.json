@@ -18,7 +18,20 @@
         "minWidth": 860,
         "minHeight": 600,
         "decorations": false,
-        "resizable": true
+        "resizable": true,
+        "label": "main"
+      },
+      {
+        "title": "TFT 对战助手",
+        "label": "overlay",
+        "width": 360,
+        "height": 620,
+        "decorations": false,
+        "resizable": false,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "visible": false,
+        "transparent": true
       }
     ],
     "security": {

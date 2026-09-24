@@ -316,6 +316,32 @@ pub struct CompTraitRow {
     pub count: u32,
 }
 
+/// 对局内即时状态（2999 Game Client API）。
+#[derive(Debug, Clone, Serialize, Default)]
+pub struct LiveGameState {
+    pub available: bool,
+    pub gold: Option<i64>,
+    pub level: Option<i64>,
+    pub health: Option<f64>,
+    pub max_health: Option<f64>,
+    pub xp: Option<f64>,
+    pub stage: String,
+    pub game_time: f64,
+    pub players: Vec<LivePlayer>,
+}
+
+/// 对局中某名玩家的实时简要信息。
+#[derive(Debug, Clone, Serialize, Default)]
+pub struct LivePlayer {
+    pub puuid: Option<String>,
+    pub name: String,
+    pub health: f64,
+    pub max_health: f64,
+    pub level: Option<i64>,
+    pub rank: Option<i64>,
+    pub is_me: bool,
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct MetaResult {
     pub comps: Vec<MetaComp>,

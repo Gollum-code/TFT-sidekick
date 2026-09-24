@@ -437,6 +437,422 @@ const view = ref<
   | "settings"
 >("matches");
 const matches = ref<MatchSummary[]>([]);
+
+// ===== 游戏内辅助悬浮窗（overlay 窗口专用） =====
+const isOverlay = getCurrentWindow().label === "overlay";
+const overlayPhase = ref("");
+const overlaySummoner = ref("");
+const overlayRank = ref("");
+const overlayDivision = ref("");
+const overlayLp = ref(0);
+
+// 对局实时状态（2999 Game Client API）
+const live = ref<{
+  available: boolean;
+  gold: number | null;
+  level: number | null;
+  health: number | null;
+  max_health: number | null;
+  stage: string;
+  game_time: number;
+  players: {
+    name: string;
+    health: number;
+    max_health: number;
+    level: number | null;
+    rank: number | null;
+    is_me: boolean;
+  }[];
+}>({
+  available: false,
+  gold: null,
+  level: null,
+  health: null,
+  max_health: null,
+  stage: "",
+  game_time: 0,
+  players: [],
+});
+
+async function refreshOverlay() {
+  try {
+    const r = await invoke<any>("set_overlay_state");
+    overlayPhase.value = r.phase || "";
+    if (r.summoner) overlaySummoner.value = r.summoner;
+    if (r.rank_tier) {
+      overlayRank.value = r.rank_tier;
+      overlayDivision.value = r.rank_division || "";
+      overlayLp.value = r.rank_lp || 0;
+    }
+  } catch {
+    /* 静默 */
+  }
+}
+
+async function toggleOverlay() {
+  try {
+    const visible = await invoke<boolean>("toggle_overlay");
+    if (!visible) showToast("游戏内悬浮窗已隐藏");
+  } catch (e) {
+    showToast(`悬浮窗操作失败: ${e}`);
+  }
+}
+
+function applyLive(payload: any) {
+  if (!payload) {
+    live.value = { available: false, gold: null, level: null, health: null, max_health: null, stage: "", game_time: 0, players: [] };
+    return;
+  }
+  live.value = {
+    available: !!payload.available,
+    gold: payload.gold ?? null,
+    level: payload.level ?? null,
+    health: payload.health ?? null,
+    max_health: payload.max_health ?? null,
+    stage: payload.stage ?? "",
+    game_time: payload.game_time ?? 0,
+    players: payload.players ?? [],
+  };
+}
+
+function fmtGameTime(s: number) {
+  if (!s) return "0:00";
+  const m = Math.floor(s / 60);
+  const sec = Math.floor(s % 60);
+  return `${m}:${sec.toString().padStart(2, "0")}`;
+}
+
+function livePlayers() {
+  return [...live.value.players]
+    .sort((a, b) => (a.rank ?? 99) - (b.rank ?? 99))
+    .slice(0, 8);
+}
+
+function hpWidth(p: { health: number; max_health: number }) {
+  const max = p.max_health > 0 ? p.max_health : 100;
+  const pct = Math.max(0, Math.min(100, (p.health / max) * 100));
+  return { width: `${pct}%` };
+}
+
+// ===== 商店 OCR 识别 =====
+const ocrScanning = ref(false);
+const ocrText = ref("");
+const ocrError = ref("");
+interface OcrUnit {
+  id: string;
+  name: string;
+  icon: string;
+  cost: number;
+  score: number;
+}
+const ocrMatched = ref<OcrUnit[]>([]);
+
+async function scanShopOcr() {
+  ocrScanning.value = true;
+  ocrError.value = "";
+  ocrText.value = "";
+  try {
+    const text = await invoke<string>("ocr_shop_screen");
+    ocrText.value = text;
+    ocrMatched.value = matchOcrToUnits(text);
+  } catch (e) {
+    ocrError.value = String(e);
+    ocrMatched.value = [];
+  } finally {
+    ocrScanning.value = false;
+  }
+}
+
+/** OCR 文本 → 匹配棋子（模糊匹配名字） */
+function matchOcrToUnits(text: string): { id: string; name: string; icon: string; cost: number; score: number }[] {
+  if (!text.trim()) return [];
+  const units = (NAME_MAP.units as Record<string, any>);
+  const out: { id: string; name: string; icon: string; cost: number; score: number }[] = [];
+  // 按名字长度从长到短匹配，避免"阿狸"先命中"阿木木"
+  const entries = Object.entries(units).sort(
+    (a, b) => (b[1].cn?.length ?? 0) - (a[1].cn?.length ?? 0)
+  );
+  const cleaned = text.replace(/[\s·。，,]*/g, "");
+  const used = new Set<string>();
+  for (const [id, info] of entries) {
+    const cn = info.cn ?? "";
+    const en = info.en ?? "";
+    if (!cn && !en) continue;
+    if (used.has(id)) continue;
+    const hitCn = cn.length >= 2 && cleaned.includes(cn);
+    const hitEn = en.length >= 3 && text.toLowerCase().includes(en.toLowerCase());
+    if (hitCn || hitEn) {
+      out.push({
+        id,
+        name: cn || en,
+        icon: unitIcon(id),
+        cost: info.c ?? 0,
+        score: hitCn ? cn.length : 1,
+      });
+      used.add(id);
+    }
+  }
+  return out.sort((a, b) => b.score - a.score).slice(0, 5);
+}
+
+/** 商店 OCR 推荐：根据识别出的棋子 → 关联的强势阵容 + 同阵容关键棋子 */
+const ocrRecommendations = computed((): {
+  comps: { slug: string; name: string; icon: string; matched: number; total: number }[];
+  suggest: { id: string; name: string; icon: string; cost: number }[];
+} | null => {
+  if (!ocrMatched.value.length || !tftData.value) return null;
+  const unitSet = new Set(ocrMatched.value.map((u) => u.id));
+  // 统计这些棋子覆盖的强势阵容（compDetails coreUnits 交集）
+  const compHits: { slug: string; name: string; icon: string; matched: number; total: number; missing: string[] }[] = [];
+  for (const slug of Object.keys(tftData.value.compDetails)) {
+    const core = tftData.value.compDetails[slug].composition.overview.coreUnits;
+    const ids = core.map((u) => u.id);
+    const matched = ids.filter((id) => unitSet.has(id)).length;
+    if (matched >= 2) {
+      compHits.push({
+        slug,
+        name: compName(slug),
+        icon: compCardIcon(slug),
+        matched,
+        total: ids.length,
+        missing: ids.filter((id) => !unitSet.has(id)).slice(0, 3),
+      });
+    }
+  }
+  const top = compHits.sort((a, b) => b.matched - a.matched).slice(0, 3);
+  if (!top.length) return null;
+  const best = top[0];
+  return {
+    comps: top,
+    // 补充建议拿哪些缺失棋子（最高优先级：当前能拿的）
+    suggest: best.missing.slice(0, 3).map((id) => ({
+      id,
+      name: unitName(id),
+      icon: unitIcon(id),
+      cost: unitCost(id),
+    })),
+  };
+});
+
+// ===== overlay 页签与扩展内容 =====
+const overlayTab = ref<"live" | "comps" | "items">("live");
+const overlaySelectedComp = ref<string | null>(null);
+
+/** 装备推荐：从 unitItems 汇总全阵容高频装备 + 对应弈子 */
+const overlayItemRecs = computed(() => {
+  if (!tftData.value) return [];
+  // 收集每个弈子的 Core/HighFrequency 装备（带必要性）
+  const recs: Record<string, { itemId: string; need: number; units: { id: string; need: number }[] }> = {};
+  for (const u of tftData.value.unitItems) {
+    const bids = u.buckets?.Core ?? [];
+    const freq = u.buckets?.HighFrequency ?? [];
+    for (const b of [...bids, ...freq]) {
+      if (!b.itemId) continue;
+      const need = b.necessity ?? 0;
+      if (!recs[b.itemId]) recs[b.itemId] = { itemId: b.itemId, need: 0, units: [] };
+      recs[b.itemId].need += need;
+      recs[b.itemId].units.push({ id: u.unitId, need });
+    }
+  }
+  return Object.values(recs)
+    .sort((a, b) => b.need - a.need)
+    .slice(0, 5)
+    .map((r) => ({
+      itemId: r.itemId,
+      need: r.need,
+      units: r.units.sort((a, b) => b.need - a.need).slice(0, 3),
+    }));
+});
+
+/** 阵容详情（overlay 内展开）：核心棋子 + 出装 + 站位 + 羁绊 */
+const overlayCompDetail = computed(() => {
+  const slug = overlaySelectedComp.value;
+  if (!slug || !tftData.value) return null;
+  const d = tftData.value.compDetails[slug];
+  if (!d) return null;
+  const ov = d.composition.overview;
+  // teamCode → 位置数组 → 28 格棋盘
+  const positions = parseTeamCode(ov.teamCode);
+  const { grid, bench } = buildBoardGrid(positions);
+  // 序号 → 单位 id（对照 coreUnits 顺序）
+  const unitById: Record<number, string> = {};
+  ov.coreUnits.forEach((u, i) => (unitById[i + 1] = u.id));
+  const unitByPos: Record<number, string> = {};
+  for (let i = 0; i < 28; i++) {
+    const n = grid[i];
+    if (n && unitById[n]) unitByPos[i] = unitById[n];
+  }
+  return {
+    slug,
+    name: compName(slug),
+    icon: compCardIcon(slug),
+    stats: ov.stats,
+    units: ov.coreUnits,
+    traits: ov.traits,
+    teamCodeGrid: grid,
+    bench,
+    coreUnitByPos: unitByPos,
+    variants: d.composition.variants,
+    priority: d.composition.priorityMatrixRows,
+  };
+});
+
+function overlayOpenComp(slug: string) {
+  overlaySelectedComp.value = overlaySelectedComp.value === slug ? null : slug;
+}
+
+/** 装备合成路线：热门成型装 → 所需散件（来自 CDragon items.composition） */
+const itemRecsById = computed(() => {
+  const m: Record<string, { name: string; icon_url: string; composition: string[] }> = {};
+  for (const i of items.value) m[i.id] = i;
+  return m;
+});
+const overlayCraftables = computed(() => {
+  if (!tftData.value) return [];
+  const recs = overlayItemRecs.value;
+  const out: { id: string; comps: string[] }[] = [];
+  for (const r of recs) {
+    const full = itemRecsById.value[r.itemId];
+    const comps = full?.composition?.filter((c) => c) ?? [];
+    if (comps.length) out.push({ id: r.itemId, comps });
+  }
+  return out.slice(0, 5);
+});
+
+/** 连胜连败：从战绩库最近 N 局推断当前走势 */
+const overlayStreak = computed(() => {
+  if (!matches.value.length) return null;
+  // matches 按时间倒序，取最近 8 局，从最近一局向前数连续同倾向局数
+  const places = matches.value.map((m) => m.placement).filter((p): p is number => p != null).slice(0, 8);
+  if (!places.length) return null;
+  const first = places[0];
+  const isWin = first <= 4;
+  let count = 0;
+  for (const p of places) {
+    if ((p <= 4) === isWin) count++;
+    else break;
+  }
+  if (isWin) {
+    return count >= places.length
+      ? { type: "win", count, text: `近 ${count} 局均前四，状态火热` }
+      : { type: "win", count, text: `已连续 ${count} 局前四，可激进些` };
+  }
+  return count >= places.length
+    ? { type: "loss", count, text: `近 ${count} 局未进前四，建议稳节奏` }
+    : { type: "loss", count, text: `已连续 ${count} 局未进前四，注意血量与经济` };
+});
+
+// ===== 对局内推荐（meta 数据 + 实时状态 → 建议） =====
+
+/** 解码 teamCode（如 "023FC3FB...TFTSet18"）→ 每单位位置数组。
+ * Riot 格式：去掉 "TFTSet\d+" 后缀后，
+ * - 前 2 nibble = 固定头 (02)
+ * - 之后每 3 nibble (12 bits) = 一个单位
+ * - 12 bits 的低 5 位 = 位置编码：0..27 = 棋盘 7列×4行（row=pos/7, col=pos%7），28+ = 替补席
+ * 返回与 coreUnits 顺序对齐的位置数组（0=棋盘空, -1=替补席）。
+ */
+function parseTeamCode(code: string | undefined | null): number[] {
+  const body = (code ?? "").replace(/TFTSet\d+/i, "");
+  const nibbles = body.split("").map((c) => parseInt(c, 16));
+  const out: number[] = [];
+  if (nibbles.length < 5) return out;
+  for (let i = 2; i + 2 < nibbles.length; i += 3) {
+    const v = nibbles[i] * 256 + nibbles[i + 1] * 16 + nibbles[i + 2];
+    if (v === 0) continue; // padding 0
+    out.push(v % 32);
+  }
+  return out;
+}
+
+/** 由位置值生成 28 格棋盘映射：grid[i] = 核心棋子序号（1..n），i = row*7+col；替补席序号为负。 */
+function buildBoardGrid(positions: number[]): { grid: number[]; bench: number[] } {
+  const grid = new Array(28).fill(0);
+  const bench: number[] = [];
+  positions.forEach((pos, idx) => {
+    if (pos >= 0 && pos < 28) grid[pos] = idx + 1;
+    else if (pos >= 28) bench.push(idx + 1);
+  });
+  return { grid, bench };
+}
+
+function parseStage(stage: string): { major: number; minor: number } {
+  const m = /^(\d+)-(\d+)$/.exec(stage);
+  if (!m) return { major: 0, minor: 0 };
+  return { major: parseInt(m[1], 10), minor: parseInt(m[2], 10) };
+}
+
+/** 标准经济节奏下，某 stage 通常应达到的等级（2-1≈4级 → 4-5≈8级 → 5-1≈9级） */
+function expectedLevelForStage(stage: string): number {
+  const { major, minor } = parseStage(stage);
+  if (major <= 1) return 4;
+  if (major === 2) return minor >= 5 ? 5 : 4;
+  if (major === 3) return minor >= 5 ? 7 : 6;
+  if (major === 4) return minor >= 5 ? 8 : 7;
+  return 9;
+}
+
+/** 根据实时状态生成 3 条以内的经济/血量建议 */
+const overlayAdvice = computed(() => {
+  if (!live.value.available) return [];
+  const tips: { level: "good" | "warn" | "bad"; text: string }[] = [];
+  const gold = live.value.gold ?? -1;
+  const hp = live.value.health ?? -1;
+  const lv = live.value.level ?? -1;
+  const stage = live.value.stage;
+  const { major } = parseStage(stage);
+
+  // 金币建议（阶段 1 金币少是正常的，不提示）
+  if (gold >= 0 && major >= 2) {
+    if (gold >= 50) tips.push({ level: "good", text: `金币 ${gold}，利息已拉满，可放心消费` });
+    else if (gold >= 40) tips.push({ level: "good", text: `金币 ${gold}，接近 50 利息线，尽量别破 40` });
+    else if (gold >= 30) tips.push({ level: "warn", text: `金币 ${gold}，注意保住 30 利息` });
+    else tips.push({ level: "bad", text: `金币 ${gold}，经济紧张，避免过度消费` });
+  }
+
+  // 等级 vs 标准节奏（阶段 1 跳过，此时等级通常是正常的）
+  if (stage && lv > 0 && major >= 2) {
+    const exp = expectedLevelForStage(stage);
+    if (lv < exp) tips.push({ level: "warn", text: `${stage} 通常已到 ${exp} 级，当前 ${lv} 级略慢` });
+    else if (lv > exp) tips.push({ level: "good", text: `${stage} 就到 ${lv} 级，等级节奏领先` });
+  }
+
+  // 血量风险（所有阶段）
+  if (hp >= 0) {
+    if (hp < 20) tips.push({ level: "bad", text: `仅剩 ${Math.round(hp)} HP，必须全力保命` });
+    else if (hp < 40) tips.push({ level: "warn", text: `${Math.round(hp)} HP，注意血量，考虑提速` });
+  }
+
+  return tips.slice(0, 3);
+});
+
+/** 推荐阵容：top3 的 meta 阵容（含图标与 AVP） */
+const overlayCompRecs = computed(() => {
+  if (!tftData.value) return [];
+  return [...tftData.value.compAtlas.compositionSummaries]
+    .sort((a, b) => a.avgPlacementValue - b.avgPlacementValue)
+    .slice(0, 3)
+    .map((c) => ({
+      slug: c.slug,
+      name: compName(c.slug),
+      icon: compCardIcon(c.slug),
+      avp: c.avgPlacementValue,
+    }));
+});
+
+function phaseLabel(p: string) {
+  const map: Record<string, string> = {
+    Lobby: "大厅",
+    Matchmaking: "匹配中",
+    ReadyCheck: "对局确认",
+    ChampSelect: "选人阶段",
+    InProgress: "对局进行中",
+    PreEndOfGame: "结算中",
+    EndOfGame: "对局结束",
+  };
+  return map[p] || p || "—";
+}
+
+// ===== 对局状态（主窗口也用） =====
 const info = ref<AppInfo | null>(null);
 const summoner = ref<SummonerInfo | null>(null);
 const lcuSource = ref("");
@@ -490,7 +906,7 @@ async function openStats() {
 }
 
 const dataTab = ref<
-  "overview" | "champions" | "traits" | "items" | "augments" | "wisps" | "loot" | "gold" | "reroll" | "odds" | "rules"
+  "overview" | "champions" | "traits" | "items" | "augments" | "wisps" | "loot" | "gold" | "reroll" | "odds" | "rules" | "econ"
 >("overview");
 const dataLoading = ref(false);
 const items = ref<ItemData[]>([]);
@@ -499,6 +915,89 @@ const traits = ref<TraitData[]>([]);
 const augments = ref<ItemData[]>([]);
 const shopOdds = ref<ShopOddsLevel[]>([]);
 const gameRules = ref<RulesSection[]>([]);
+// 经济节奏时间轴（标准参考，非实时）
+const econTimeline: {
+  stage: string;
+  phase_label: string;
+  items: { label: string; desc: string }[];
+}[] = [
+  {
+    stage: "1-1 ~ 1-4",
+    phase_label: "法术开局 · 攒钱",
+    items: [
+      { label: "目标等级", desc: "1-1 升 4 级（免费），正常 1-3 前后到 4 级" },
+      { label: "金币", desc: "4 人开局约 0-10 金，主要靠野怪掉落" },
+      { label: "拿弈子", desc: "围绕 1-2 费核心过渡，拿能与成型阵容挂钩的棋子" },
+      { label: "策略", desc: "不花钱重投商店，尽量自然成型；吃基础利息" },
+    ],
+  },
+  {
+    stage: "2-1 ~ 2-4",
+    phase_label: "蓄力 · 目标 20 金",
+    items: [
+      { label: "目标等级", desc: "2-1 前后升到 5 级" },
+      { label: "金币", desc: "目标攒到 20 金吃 2 利息" },
+      { label: "升级", desc: "2-1 或 2-2 升 5（30 金内）；若血量健康可稍等" },
+      { label: "拿弈子", desc: "锁定核心棋子，2 费弈子开始出现" },
+    ],
+  },
+  {
+    stage: "2-5 ~ 2-7",
+    phase_label: "冲刺 30 金 · 确定方向",
+    items: [
+      { label: "目标等级", desc: "保持 5 级，观察是否有人抢牌" },
+      { label: "金币", desc: "目标攒到 30 金吃 3 利息" },
+      { label: "升级", desc: "2-6/2-7 视血量决定是否抢升 6 级" },
+      { label: "策略", desc: "确定成型方向，开始囤核心弈子的 2 星" },
+    ],
+  },
+  {
+    stage: "3-1 ~ 3-4",
+    phase_label: "关键转折 · 30-50 金",
+    items: [
+      { label: "目标等级", desc: "3-1 前升到 6 级（标准节奏）" },
+      { label: "金币", desc: "3-4 前后攒到 40-50 金" },
+      { label: "升级", desc: "3-1 升 6（约 40 金时）；升级后 D 牌 2-3 次找核心" },
+      { label: "血量", desc: "若 <30 HP，放弃部分经济提前抢节奏" },
+    ],
+  },
+  {
+    stage: "3-5 ~ 3-7",
+    phase_label: "决定存钱 or 提速",
+    items: [
+      { label: "目标等级", desc: "6 级稳定，开始决定 7 级节奏" },
+      { label: "金币", desc: "根据血量和牌的情况目标 50 金" },
+      { label: "策略", desc: "血量健康 → 存钱到 50；血量危险 → 立即抢牌提质量" },
+    ],
+  },
+  {
+    stage: "4-1 ~ 4-4",
+    phase_label: "冲 7 级 · 核心成型",
+    items: [
+      { label: "目标等级", desc: "4-1 到 4-2 升 7 级" },
+      { label: "金币", desc: "7 级后 D 牌找核心 3 费/4 费弈子" },
+      { label: "策略", desc: "阵容成型关键期，星级做完后再考虑 8 级" },
+    ],
+  },
+  {
+    stage: "4-5 ~ 4-7",
+    phase_label: "决胜负 · 8 级",
+    items: [
+      { label: "目标等级", desc: "4-5 到 5-1 前后升 8 级" },
+      { label: "金币", desc: "8 级后 D 高费核心，2 星 5 费开始出现" },
+      { label: "策略", desc: "若血量健康可以慢慢上 9；否则全力 D 卡保名次" },
+    ],
+  },
+  {
+    stage: "5-1 ~ 6-1",
+    phase_label: "决赛圈 · 拉满",
+    items: [
+      { label: "目标等级", desc: "视经济和血量决定 9 级冲刺或稳住 8 级" },
+      { label: "金币", desc: "高费 2 星是关键，5 费核心 2 星决定上限" },
+      { label: "策略", desc: "血量/装备偏差时保 4 即可；优势局冲 9 找版本答案" },
+    ],
+  },
+];
 const lootTables: { title: string; rows: string[][] }[] = [
   {
     title: "常见战利品球（按回合）",
@@ -717,6 +1216,20 @@ const selectedCompDetail = computed(() => {
   if (!selectedCompSlug.value || !tftData.value) return null;
   return tftData.value.compDetails[selectedCompSlug.value] ?? null;
 });
+
+/** 主窗口阵容详情：站位图（teamCode 解码） */
+const compPosCells = computed(() => {
+  if (!selectedCompDetail.value) return [];
+  const ov = selectedCompDetail.value.composition.overview;
+  const { grid } = buildBoardGrid(parseTeamCode(ov.teamCode));
+  return grid.map((n) => (n >= 1 && n <= ov.coreUnits.length ? ov.coreUnits[n - 1].id : null));
+});
+const compPosBench = computed(() => {
+  if (!selectedCompDetail.value) return [];
+  const ov = selectedCompDetail.value.composition.overview;
+  const { bench } = buildBoardGrid(parseTeamCode(ov.teamCode));
+  return bench;
+});
 const selectedCard = computed(() => {
   if (!selectedCompSlug.value) return null;
   return cardOf(selectedCompSlug.value);
@@ -788,18 +1301,26 @@ function costShareArr(obj: Record<string, number>): number[] {
   return [1, 2, 3, 4, 5].map((k) => obj[String(k)] ?? 0);
 }
 
-// ===== 前期（Early）：按费用分组的低费阵容/弈子推荐 =====
+// ===== 前期（Early）：通用低费过渡英雄池 =====
+// 前期不应绑定某个具体成型阵容，而是展示每个费用段可用作过渡的弈子
+// 及其核心/重要装备、关联的成型阵容方向，方便玩家开局灵活拿子。
 const earlyCost = ref<1 | 2 | 3 | "all">("all");
-const earlyComps = computed(() => {
+const earlyUnits = computed(() => {
   if (!tftData.value) return [];
-  const cards = tftData.value.compositionCards.filter(
-    (c) => earlyCost.value === "all" || c.compCost === earlyCost.value
-  );
-  const byCost: Record<number, TFCompositionCard[]> = { 1: [], 2: [], 3: [], 4: [], 5: [] };
-  for (const c of cards) {
-    if (byCost[c.compCost]) byCost[c.compCost].push(c);
-  }
-  return byCost;
+  return tftData.value.unitItems
+    .filter((u) => earlyCost.value === "all" || u.unitCost === earlyCost.value)
+    .sort((a, b) => a.unitCost - b.unitCost || unitName(a.unitId).localeCompare(unitName(b.unitId)));
+});
+// 每个低费弈子关联的成型阵容（点击可跳到阵容详情）
+function earlyCompsFor(unit: TFUnitItem): string[] {
+  return (unit.coreCompStrengths || []).map((c) => c.comp_key);
+}
+// 低费阵容（1-3费为主力）同样作为早期目标参考
+const earlyGoalComps = computed(() => {
+  if (!tftData.value) return [];
+  return tftData.value.compositionCards
+    .filter((c) => c.compCost <= 3)
+    .sort((a, b) => a.averagePlacementValue - b.averagePlacementValue);
 });
 
 // ===== 阵容构建器（Team Builder） =====
@@ -1098,6 +1619,7 @@ const navGroups: {
       { label: "海克斯", go: () => (dataTab.value = "augments") },
       { label: "商店概率", go: () => (dataTab.value = "odds") },
       { label: "机制", go: () => (dataTab.value = "rules") },
+      { label: "经济节奏", go: () => (dataTab.value = "econ") },
     ],
   },
   { key: "settings", label: "设置", icon: "⚙" },
@@ -1244,11 +1766,63 @@ function fmtDate(s: string) {
 }
 
 onMounted(async () => {
+  if (isOverlay) {
+    // overlay 窗口：加载战绩（连胜连败）+ 实时状态 + 推荐
+    loadMatches();
+    getMeta();
+    await refreshOverlay();
+    await listen<any>("overlay-state", (e) => {
+      const s = e.payload ?? {};
+      overlayPhase.value = s.phase || overlayPhase.value;
+      if (s.summoner) overlaySummoner.value = s.summoner;
+      if (s.rank_tier) {
+        overlayRank.value = s.rank_tier;
+        overlayDivision.value = s.rank_division || "";
+        overlayLp.value = s.rank_lp || 0;
+      }
+    });
+    await listen<string>("overlay-phase", () => {
+      refreshOverlay();
+    });
+    // 对局结束刷新战绩（连胜连败趋势更新）
+    await listen<MatchSummary | null>("match-ended", () => {
+      loadMatches();
+    });
+    await listen<any>("overlay-live", (e) => {
+      applyLive(e.payload);
+    });
+    setInterval(async () => {
+      refreshOverlay();
+      try {
+        const s = await invoke<any>("get_live_state");
+        if (s?.available) applyLive(s);
+      } catch {
+        /* 静默 */
+      }
+    }, 5000);
+    return;
+  }
+
   loadMatches();
   loadInfo();
   // 后台预加载 meta + CDN 数据，首次进入数据页无需等待
   getMeta();
   startAutoRefresh();
+  // 初始化对局流程状态（供主窗口 dot 指示灯）
+  refreshOverlay();
+
+  // 对局实时状态（供主窗口显示，不进对局时后端会推 null）
+  await listen<any>("overlay-live", (e) => {
+    applyLive(e.payload);
+  });
+  // 对局流程状态（供主窗口 dot 指示灯）
+  await listen<any>("overlay-state", (e) => {
+    const s = e.payload ?? {};
+    if (s.phase) overlayPhase.value = s.phase;
+  });
+  await listen<string>("overlay-phase", (e) => {
+    overlayPhase.value = e.payload || "";
+  });
   // 启动后静默检查是否有新补丁（不打扰用户，仅在有更新时提示）
   setTimeout(() => {
     checkForUpdate().then(() => {
@@ -1287,6 +1861,7 @@ onMounted(async () => {
   const onKeydown = (e: KeyboardEvent) => {
     if (!(e.ctrlKey || e.metaKey)) return;
     const map: Record<string, any> = {
+      "0": "overlay",
       "1": "matches",
       "2": "stats",
       "3": "compList",
@@ -1297,7 +1872,10 @@ onMounted(async () => {
       "8": "augments",
     };
     const v = map[e.key];
-    if (v) {
+    if (v === "overlay") {
+      e.preventDefault();
+      toggleOverlay();
+    } else if (v) {
       e.preventDefault();
       setView(v);
     }
@@ -1307,7 +1885,275 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div class="window">
+  <!-- 游戏内辅助悬浮窗（overlay 窗口） -->
+  <div v-if="isOverlay" class="overlay" data-tauri-drag-region>
+    <div class="overlay-head">
+      <span class="overlay-dot" :class="{ live: overlayPhase === 'InProgress' }"></span>
+      <span class="overlay-title">TFT 对战助手</span>
+      <span class="overlay-phase">{{ phaseLabel(overlayPhase) }}</span>
+    </div>
+    <div v-if="overlaySummoner" class="overlay-summoner">{{ overlaySummoner }}</div>
+    <div v-if="overlayRank" class="overlay-rank">
+      {{ overlayRank }} {{ overlayDivision }} · {{ overlayLp }} LP
+    </div>
+
+    <!-- 页签：实时 / 阵容 / 装备 -->
+    <div class="overlay-tabs">
+      <button
+        v-for="t in ([
+          { key: 'live', label: '实时' },
+          { key: 'comps', label: '阵容' },
+          { key: 'items', label: '装备' },
+        ] as const)"
+        :key="t.key"
+        class="overlay-tab"
+        :class="{ active: overlayTab === t.key }"
+        @click="overlayTab = t.key"
+      >{{ t.label }}</button>
+    </div>
+
+    <!-- ===== 实时页签 ===== -->
+    <template v-if="overlayTab === 'live'">
+      <!-- 连胜连败趋势 -->
+      <div v-if="overlayStreak" class="overlay-streak" :class="overlayStreak.type">
+        {{ overlayStreak.text }}
+      </div>
+
+      <!-- 对局实时状态 -->
+      <div v-if="live.available && overlayPhase === 'InProgress'" class="overlay-live">
+        <div class="live-row">
+          <span class="live-label">阶段</span><span class="live-val">{{ live.stage || "—" }}</span>
+          <span class="live-label">时间</span><span class="live-val">{{ fmtGameTime(live.game_time) }}</span>
+        </div>
+        <div class="live-row">
+          <span class="live-label">等级</span><span class="live-val">{{ live.level ?? "—" }}</span>
+          <span class="live-label">金币</span><span class="live-val gold">{{ live.gold ?? "—" }}</span>
+        </div>
+        <div class="live-row">
+          <span class="live-label">生命</span><span class="live-val">{{ Math.round(live.health ?? 0) }}</span>
+        </div>
+        <div class="live-players">
+          <div
+            v-for="p in livePlayers()"
+            :key="p.name + p.rank"
+            class="live-player"
+            :class="{ me: p.is_me }"
+            :title="`${p.name} · ${Math.round(p.health)}HP`"
+          >
+            <span class="lp-rank">{{ p.rank ?? "?" }}</span>
+            <span class="lp-hp" :style="hpWidth(p)"></span>
+          </div>
+        </div>
+      </div>
+
+      <!-- 实时建议 -->
+      <div v-if="live.available && overlayPhase === 'InProgress'" class="overlay-advice">
+        <div
+          v-for="(t, i) in overlayAdvice"
+          :key="i"
+          class="advice-row"
+          :class="t.level"
+        >{{ t.text }}</div>
+      </div>
+
+      <!-- 版本推荐阵容（简表，点击跳到阵容页签） -->
+      <div v-if="overlayCompRecs.length && overlayPhase === 'InProgress'" class="overlay-comps">
+        <div class="comps-title">当前版本推荐（点阵容看详情）</div>
+        <div
+          v-for="c in overlayCompRecs"
+          :key="c.slug"
+          class="comp-row"
+          @click="overlayTab = 'comps'; overlayOpenComp(c.slug)"
+        >
+          <img class="comp-icon" :src="c.icon" alt="" />
+          <span class="comp-name">{{ c.name }}</span>
+          <span class="comp-avp">{{ c.avp.toFixed(2) }}</span>
+        </div>
+      </div>
+
+      <!-- 商店 OCR 扫描 -->
+      <div v-if="overlayPhase === 'InProgress'" class="overlay-ocr">
+        <button class="ocr-btn" @click="scanShopOcr" :disabled="ocrScanning">
+          {{ ocrScanning ? "扫描中…" : "📷 扫描商店" }}
+        </button>
+        <p v-if="ocrError" class="ocr-error">{{ ocrError }}</p>
+
+        <!-- 识别到的棋子 -->
+        <div v-if="ocrMatched.length" class="ocr-units">
+          <div v-for="u in ocrMatched" :key="u.id" class="ocr-unit">
+            <img class="top-icon" :src="u.icon" :alt="u.name" :title="u.name" />
+            <span class="ocr-unit-name">{{ u.name }}</span>
+            <span class="ocr-cost" :style="{ color: costColors[u.cost - 1] }">{{ u.cost }}费</span>
+          </div>
+        </div>
+
+        <!-- 推荐 -->
+        <div v-if="ocrRecommendations" class="ocr-recs">
+          <div class="comps-title">命中阵容</div>
+          <div
+            v-for="c in ocrRecommendations.comps"
+            :key="c.slug"
+            class="comp-row clickable"
+            @click="overlayTab = 'comps'; overlayOpenComp(c.slug)"
+          >
+            <img class="comp-icon" :src="c.icon" alt="" />
+            <span class="comp-name">{{ c.name }}</span>
+            <span class="comp-avp">{{ c.matched }}/{{ c.total }}</span>
+          </div>
+          <div v-if="ocrRecommendations.suggest.length" class="ocr-suggest">
+            <span class="comps-title">建议拿：</span>
+            <div class="ocr-suggest-units">
+              <img
+                v-for="s in ocrRecommendations.suggest"
+                :key="s.id"
+                class="top-icon"
+                :src="s.icon"
+                :alt="s.name"
+                :title="s.name"
+              />
+            </div>
+          </div>
+        </div>
+        <p v-else-if="ocrText && !ocrError" class="ocr-empty">未识别到已知棋子（可能需要调整窗口位置）</p>
+      </div>
+    </template>
+
+    <!-- ===== 阵容页签 ===== -->
+    <template v-if="overlayTab === 'comps'">
+      <div v-if="!tftData" class="overlay-empty">加载数据中…</div>
+      <template v-else>
+        <!-- 阵容列表 -->
+        <div v-if="!overlayCompDetail" class="overlay-comp-list">
+          <div class="comps-title">当前版本强势阵容</div>
+          <div
+            v-for="(c, i) in overlayCompRecs"
+            :key="c.slug"
+            class="comp-row clickable"
+            @click="overlayOpenComp(c.slug)"
+          >
+            <span class="comp-rank">#{{ i + 1 }}</span>
+            <img class="comp-icon" :src="c.icon" alt="" />
+            <span class="comp-name">{{ c.name }}</span>
+            <span class="comp-avp">{{ c.avp.toFixed(2) }}</span>
+          </div>
+        </div>
+
+        <!-- 阵容详情 -->
+        <div v-else-if="overlayCompDetail" class="overlay-comp-detail">
+          <div class="detail-head">
+            <button class="detail-back" @click="overlaySelectedComp = null">← 返回</button>
+            <span class="detail-title">{{ overlayCompDetail.name }}</span>
+            <span class="detail-avp">AVP {{ overlayCompDetail.stats.avgPlacementValue.toFixed(2) }}</span>
+          </div>
+
+          <!-- 核心棋子 + 出装 -->
+          <div class="detail-units">
+            <div v-for="u in overlayCompDetail.units" :key="u.id" class="detail-unit">
+              <div class="detail-unit-icon-wrap" :class="'cost' + u.cost">
+                <img loading="lazy" :src="unitIcon(u.id)" :alt="u.nameCn" class="unit-icon" />
+              </div>
+              <div class="detail-unit-name">{{ u.nameCn }}</div>
+              <div class="detail-builds">
+                <div v-for="b in u.builds.slice(0, 2)" :key="b.index" class="detail-build">
+                  <img loading="lazy" v-for="it in b.items" :key="it.id" :src="itemIcon(it.id)" :alt="it.id" class="mini-item" />
+                </div>
+                <div v-if="!u.builds.length" class="muted tiny">—</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 关键羁绊 -->
+          <div class="detail-traits">
+            <span v-for="t in overlayCompDetail.traits" :key="t.id" class="trait-chip">
+              <img loading="lazy" v-if="t.icon" :src="tfImg(t.icon)" :alt="traitName(t.id)" class="trait-icon-sm" />
+              {{ t.unitsRequired }} {{ traitName(t.id) }}
+            </span>
+          </div>
+
+          <!-- 推荐站位 -->
+          <div class="detail-pos-title">推荐站位</div>
+          <div class="detail-board">
+            <div v-for="idx in 28" :key="idx" class="board-cell">
+              <div v-if="overlayCompDetail.coreUnitByPos[idx - 1]" class="cell-unit">
+                <img
+                  loading="lazy"
+                  :src="unitIcon(overlayCompDetail.coreUnitByPos[idx - 1])"
+                  :alt="unitName(overlayCompDetail.coreUnitByPos[idx - 1])"
+                  :title="unitName(overlayCompDetail.coreUnitByPos[idx - 1])"
+                  class="cell-icon"
+                />
+              </div>
+            </div>
+          </div>
+          <div v-if="overlayCompDetail.bench.length" class="detail-bench">
+            <span class="detail-bench-lbl">替补</span>
+            <img
+              v-for="b in overlayCompDetail.bench"
+              :key="b"
+              loading="lazy"
+              :src="unitIcon(overlayCompDetail.units[b - 1]?.id)"
+              :alt="unitName(overlayCompDetail.units[b - 1]?.id)"
+              :title="unitName(overlayCompDetail.units[b - 1]?.id)"
+              class="mini-unit bench-unit"
+            />
+          </div>
+
+          <!-- 变体 -->
+          <div v-if="overlayCompDetail.variants.length" class="detail-variants-title">阵容变体</div>
+          <div v-for="v in overlayCompDetail.variants.slice(0, 3)" :key="v.variant_id" class="detail-variant">
+            <span class="variant-lbl" v-if="v.is_primary">主力</span>
+            <span class="variant-nums">{{ (v.clustered_stats.share * 100).toFixed(0) }}% · {{ v.clustered_stats.avg_placement.toFixed(1) }}</span>
+            <div class="variant-icons">
+              <img loading="lazy" v-for="u in v.units" :key="u.id" :src="unitIcon(u.id)" :alt="unitName(u.id)" class="mini-unit" :title="unitName(u.id)" />
+            </div>
+          </div>
+
+          <!-- 出装优先级（简化：仅显示 top 弈子的核心装） -->
+          <div v-if="overlayCompDetail.priority.length" class="detail-prio-title">核心弈子出装</div>
+          <div v-for="r in overlayCompDetail.priority.slice(0, 4)" :key="r.unitId" class="detail-prio-row">
+            <img class="top-icon" :src="unitIcon(r.unitId)" :title="unitName(r.unitId)" />
+            <div class="prio-items-row">
+              <div v-for="it in (r.buckets.Core || []).slice(0, 3)" :key="it.itemId" class="prio-item">
+                <img loading="lazy" :src="itemIcon(it.itemId)" class="mini-item" :title="itemName(it.itemId)" />
+              </div>
+              <div v-if="!(r.buckets.Core || []).length" class="muted tiny">—</div>
+            </div>
+          </div>
+        </div>
+      </template>
+    </template>
+
+    <!-- ===== 装备页签 ===== -->
+    <template v-if="overlayTab === 'items'">
+      <div v-if="!tftData" class="overlay-empty">加载数据中…</div>
+      <template v-else>
+        <div class="comps-title">热门装备 → 适合弈子</div>
+        <div v-for="r in overlayItemRecs" :key="r.itemId" class="item-recs">
+          <div class="item-recs-head">
+            <img class="mini-item" :src="itemIcon(r.itemId)" :alt="itemName(r.itemId)" />
+            <span class="item-recs-name">{{ itemName(r.itemId) }}</span>
+          </div>
+          <div class="item-recs-units">
+            <div v-for="u in r.units" :key="u.id" class="item-recs-unit">
+              <img class="top-icon" :src="unitIcon(u.id)" :alt="unitName(u.id)" :title="unitName(u.id)" />
+              <span class="item-recs-need">{{ (u.need * 100).toFixed(0) }}%</span>
+            </div>
+          </div>
+        </div>
+
+        <div v-if="overlayCraftables.length" class="comps-title" style="margin-top:10px">合成路线</div>
+        <div v-for="c in overlayCraftables" :key="c.id" class="craft-row">
+          <img class="mini-item" :src="itemIcon(c.id)" :alt="itemName(c.id)" />
+          <span class="craft-eq">=</span>
+          <img v-for="s in c.comps" :key="s" class="mini-item" :src="itemIcon(s)" :alt="itemName(s)" />
+        </div>
+      </template>
+    </template>
+
+    <div class="overlay-foot">对局结束自动记录战绩</div>
+  </div>
+
+  <div v-else class="window">
     <div class="titlebar" data-tauri-drag-region>
       <div class="titlebar-left">
         <span class="titlebar-logo">◈</span>
@@ -1368,6 +2214,16 @@ onMounted(async () => {
 
     <main class="content">
       <div v-if="toast" class="toast">{{ toast }}</div>
+
+      <!-- 对局实时状态条（主窗口） -->
+      <div v-if="live.available" class="live-bar">
+        <span class="live-bar-dot" :class="{ live: overlayPhase === 'InProgress' }"></span>
+        <span v-if="live.stage" class="live-bar-item">阶段 {{ live.stage }}</span>
+        <span class="live-bar-item">金币 {{ live.gold ?? "—" }}</span>
+        <span class="live-bar-item">等级 {{ live.level ?? "—" }}</span>
+        <span class="live-bar-item">生命 {{ Math.round(live.health ?? 0) }}</span>
+        <span class="live-bar-item muted">{{ fmtGameTime(live.game_time) }}</span>
+      </div>
 
       <!-- 统计视图 -->
       <template v-if="view === 'stats'">
@@ -1706,46 +2562,88 @@ onMounted(async () => {
             </table>
           </div>
         </template>
+
+        <!-- 经济节奏（标准节奏参考，非实时） -->
+        <template v-else-if="dataTab === 'econ'">
+          <div class="odds-note">以下为当前补丁的<b>标准经济节奏参考</b>，具体策略因阵容/血量/装备而异，只作节奏参考。</div>
+          <div v-for="row in econTimeline" :key="row.stage" class="rule-section">
+            <h3>{{ row.stage }}<span class="muted econ-title-sub">{{ row.phase_label }}</span></h3>
+            <table class="odds-table">
+              <tbody>
+                <tr v-for="(item, ri) in row.items" :key="ri">
+                  <td class="rule-key econ-key">{{ item.label }}</td>
+                  <td>{{ item.desc }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </template>
       </template>
 
       <!-- 阵容一览 + 阵容详情 -->
-      <!-- 前期视图 (Early) -->
+      <!-- 前期视图 (Early)：通用低费过渡 -->
       <template v-else-if="view === 'early'">
         <header class="topbar">
-          <h2>前期</h2>
-          <span class="muted">低费用阵容推荐</span>
+          <h2>前期过渡</h2>
+          <span class="muted">开局通用弈子 · 不绑定具体成型阵容</span>
         </header>
         <div class="tabs tabs-group">
           <button class="tab" :class="{ active: earlyCost === 'all' }" @click="earlyCost = 'all'">全部</button>
           <button v-for="c in [1, 2, 3]" :key="c" class="tab" :class="{ active: earlyCost === c }" @click="earlyCost = c">{{ c }} 费</button>
         </div>
+
         <template v-if="tftData">
-          <div v-for="cost in [1, 2, 3, 4, 5]" :key="cost" v-show="earlyCost === 'all' || earlyCost === cost">
-            <section v-if="earlyComps[cost]?.length" class="board-section">
-              <h3 :style="{ color: costColors[cost - 1] }">{{ cost }}费阵容</h3>
-              <div class="comp-grid">
-                <div v-for="c in earlyComps[cost]" :key="c.slug" class="comp-card" @click="showCompDetail(c.slug)">
-                  <div class="comp-card-head">
-                    <img loading="lazy" :src="tfImg(c.compIcon)" :alt="c.display_name_cn" class="comp-card-icon" />
-                    <div class="comp-card-title">
-                      <span class="comp-card-name">{{ c.display_name_cn }}</span>
-                      <span class="comp-card-en muted">{{ c.display_name_en }}</span>
-                    </div>
+          <!-- 低费过渡英雄池 -->
+          <section class="board-section">
+            <h3>过渡弈子池（{{ earlyUnits.length }}）</h3>
+            <div class="early-unit-grid">
+              <div v-for="u in earlyUnits" :key="u.unitId" class="early-unit-card" @click="earlyCompsFor(u).length && showCompDetail(earlyCompsFor(u)[0])">
+                <div class="early-unit-head">
+                  <img loading="lazy" :src="unitIcon(u.unitId)" :alt="unitName(u.unitId)" class="early-unit-icon" :class="'cost' + u.unitCost" />
+                  <div class="early-unit-info">
+                    <span class="early-unit-name">{{ unitName(u.unitId) }}</span>
+                    <span class="early-unit-en muted">{{ unitNameEn(u.unitId) }}</span>
                   </div>
-                  <div class="comp-card-stats">
-                    <div class="comp-card-stat">
-                      <span class="comp-card-val">{{ c.averagePlacementValue.toFixed(2) }}</span>
-                      <span class="comp-card-lbl">AVP</span>
-                    </div>
-                    <div class="comp-card-stat">
-                      <span class="comp-card-val">{{ (statOf(c.slug).playRate * 100).toFixed(2) }}%</span>
-                      <span class="comp-card-lbl">出场率</span>
-                    </div>
+                  <span class="early-cost-badge" :style="{ color: costColors[u.unitCost - 1] }">{{ u.unitCost }}费</span>
+                </div>
+                <div v-if="u.buckets.Core?.length || u.buckets.Important?.length" class="early-items">
+                  <span class="muted tiny">核心:</span>
+                  <img loading="lazy" v-for="it in (u.buckets.Core || []).concat(u.buckets.Important || []).slice(0, 4)" :key="it.itemId" :src="itemIcon(it.itemId)" class="mini-item" :title="itemName(it.itemId) + (it.necessity ? ' · 必需度 ' + it.necessity.toFixed(2) : '')" />
+                </div>
+                <div v-if="earlyCompsFor(u).length" class="early-comps">
+                  <span class="muted tiny">→</span>
+                  <span v-for="slug in earlyCompsFor(u).slice(0, 3)" :key="slug" class="trait-chip" @click.stop="showCompDetail(slug)">{{ compName(slug) }}</span>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <!-- 前期目标阵容（低费成型方向） -->
+          <section class="board-section">
+            <h3>前期可成型的低费阵容</h3>
+            <div class="comp-grid">
+              <div v-for="c in earlyGoalComps" :key="c.slug" class="comp-card" @click="showCompDetail(c.slug)">
+                <div class="comp-card-head">
+                  <img loading="lazy" :src="tfImg(c.compIcon)" :alt="c.display_name_cn" class="comp-card-icon" />
+                  <div class="comp-card-title">
+                    <span class="comp-card-name">{{ c.display_name_cn }}</span>
+                    <span class="comp-card-en muted">{{ c.display_name_en }}</span>
+                  </div>
+                  <span class="comp-cost-tag">${{ c.compCost }}</span>
+                </div>
+                <div class="comp-card-stats">
+                  <div class="comp-card-stat">
+                    <span class="comp-card-val">{{ c.averagePlacementValue.toFixed(2) }}</span>
+                    <span class="comp-card-lbl">AVP</span>
+                  </div>
+                  <div class="comp-card-stat">
+                    <span class="comp-card-val">{{ (statOf(c.slug).playRate * 100).toFixed(2) }}%</span>
+                    <span class="comp-card-lbl">出场率</span>
                   </div>
                 </div>
               </div>
-            </section>
-          </div>
+            </div>
+          </section>
         </template>
         <p v-else-if="!metaLoading" class="empty">加载中，请稍候…</p>
       </template>
@@ -2034,6 +2932,36 @@ onMounted(async () => {
               </div>
             </section>
 
+            <!-- 推荐站位 -->
+            <section class="board-section">
+              <h3>推荐站位</h3>
+              <div class="match-board comp-pos-board">
+                <div v-for="(cell, idx) in compPosCells" :key="idx" class="board-cell">
+                  <div v-if="cell" class="cell-unit">
+                    <img
+                      loading="lazy"
+                      :src="unitIcon(cell)"
+                      :alt="unitName(cell)"
+                      :title="unitName(cell)"
+                      class="cell-icon"
+                      :style="{ borderColor: costColor(unitCost(cell)) }"
+                    />
+                  </div>
+                </div>
+              </div>
+              <div v-if="compPosBench.length" class="comp-pos-bench">
+                <span class="muted tiny" style="margin-right:6px">替补</span>
+                <img
+                  v-for="b in compPosBench"
+                  :key="b"
+                  loading="lazy"
+                  :src="unitIcon(selectedCompDetail.composition.overview.coreUnits[b - 1]?.id)"
+                  :title="unitName(selectedCompDetail.composition.overview.coreUnits[b - 1]?.id)"
+                  class="mini-unit"
+                />
+              </div>
+            </section>
+
             <!-- 变体 -->
             <section v-if="selectedCompDetail.composition.variants.length" class="board-section">
               <h3>阵容变体</h3>
@@ -2282,6 +3210,18 @@ onMounted(async () => {
             </div>
             <div v-else class="update-banner ok">数据已是最新版本。</div>
           </template>
+        </section>
+
+        <section class="board-section">
+          <h3>游戏内悬浮窗</h3>
+          <div class="settings-row">
+            <span class="settings-label">对局中显示阶段/金币/血量 + 版本推荐</span>
+            <button class="ghost small" @click="toggleOverlay">
+              打开 / 隐藏
+            </button>
+          </div>
+          <div class="settings-row"><span class="settings-label">Ctrl/Cmd + 0</span><span class="settings-value">切换游戏内悬浮窗</span></div>
+          <p class="hint">悬浮窗为置顶小窗，可拖动到游戏画面任意位置。对局中自动刷新实时状态。</p>
         </section>
 
         <section class="board-section">
