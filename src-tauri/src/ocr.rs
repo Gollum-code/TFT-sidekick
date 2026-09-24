@@ -138,14 +138,27 @@ $g.Dispose(); $bmp.Dispose()
 exit 0
 "##;
     let ps = ps.trim();
+
+    // param() 只在 -File 模式生效；写入临时 .ps1 后用命名参数调用
+    let dir = std::env::temp_dir().join("tft-sidekick-ocr");
+    std::fs::create_dir_all(&dir)?;
+    let script_path = dir.join("capture.ps1");
+    std::fs::write(&script_path, ps)?;
+
     let out = Command::new("powershell")
-        .args(["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command"])
-        .arg(ps)
+        .args(["-NoProfile", "-ExecutionPolicy", "Bypass", "-File"])
+        .arg(&script_path)
+        .arg("-OutPath")
         .arg(save_path.to_str().unwrap_or(""))
+        .arg("-RegionX")
         .arg(region.map(|r| r.0.to_string()).unwrap_or_else(|| "-1".into()))
+        .arg("-RegionY")
         .arg(region.map(|r| r.1.to_string()).unwrap_or_else(|| "-1".into()))
+        .arg("-RegionW")
         .arg(region.map(|r| r.2.to_string()).unwrap_or_else(|| "0".into()))
+        .arg("-RegionH")
         .arg(region.map(|r| r.3.to_string()).unwrap_or_else(|| "0".into()))
+        .arg("-Scale")
         .arg(scale.to_string())
         .output()
         .map_err(|e| OcrError::Capture(e.to_string()))?;
