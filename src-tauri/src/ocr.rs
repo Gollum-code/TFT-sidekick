@@ -56,10 +56,12 @@ public class Win32 {
     [DllImport("user32.dll")] public static extern bool GetClientRect(IntPtr h, out RECT r);
     [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr h);
     [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint pid);
+    [DllImport("user32.dll")] public static extern bool PrintWindow(IntPtr hWnd, IntPtr hdcBlt, uint nFlags);
     public struct RECT { public int L, T, R, B; }
     public struct POINT { public int X, Y; }
 }
 "@
+const uint PW_RENDERFULLCONTENT = 0x00000002; # Win 8.1+：可捕获 DirectX 内容
 # 按进程名找英雄联盟客户端/游戏窗口（覆盖国服/国际服）。
 # TFT 对局画面在 LeagueClientUx 内渲染（无独立游戏窗口），且窗口可见性
 # 探测不可靠；直接取所有相关进程中 client 区域面积最大的窗口。
@@ -106,35 +108,41 @@ $absY = $pt.Y
 $cw = $rect.R - $rect.L
 $ch = $rect.B - $rect.T
 if ($cw -le 0 -or $ch -le 0) { exit 2 }
-# 区域：参数 0..100 = 窗口宽高百分比；-1 = 未指定（全客户区）
+# 截图：用 PrintWindow 捕获窗口内容（能抓 DirectX/GPU 渲染画面），
+# 再按区域裁剪并 2 倍放大，最后保存。
+$bmp = New-Object System.Drawing.Bitmap($cw, $ch)
+$g = [System.Drawing.Graphics]::FromImage($bmp)
+$hdc = $g.GetHdc()
+$ok = [Win32]::PrintWindow($hwnd, $hdc, $PW_RENDERFULLCONTENT)
+$g.ReleaseHdc($hdc)
+if (-not $ok) {
+  # 降级：GDI 屏幕复制（少数窗口无法 PrintWindow 时兜底）
+  $g.CopyFromScreen($absX, $absY, 0, 0, (New-Object System.Drawing.Size($cw, $ch)))
+}
+# 裁剪区域（0..100 为百分比，>100 为像素）
 function Px($val, $span, $default) {
   if ($val -ge 0 -and $val -le 100) { return [int]($span * $val / 100.0) }
   if ($val -gt 100) { return [int]$val }
   return $default
 }
-$x = $absX + (Px $RegionX $cw 0)
-$y = $absY + (Px $RegionY $ch 0)
-$w = Px $RegionW $cw $cw
-$h = Px $RegionH $ch $ch
-# 截图
-$bmp = New-Object System.Drawing.Bitmap($w, $h)
-$g = [System.Drawing.Graphics]::FromImage($bmp)
-$g.CopyFromScreen($x, $y, 0, 0, (New-Object System.Drawing.Size($w, $h)))
+$rx = Px $RegionX $cw 0
+$ry = Px $RegionY $ch 0
+$rw = Px $RegionW $cw $cw
+$rh = Px $RegionH $ch $ch
+if ($rw -le 0 -or $rh -le 0) { $g.Dispose(); $bmp.Dispose(); exit 3 }
 # 放大（默认 2 倍，提高 OCR 小字识别率）
 $scale = if ($Scale -gt 0) { $Scale } else { 2.0 }
-if ($scale -gt 1.0) {
-  $sw = [int][Math]::Round($w * $scale)
-  $sh = [int][Math]::Round($h * $scale)
-  $big = New-Object System.Drawing.Bitmap($sw, $sh)
-  $bg = [System.Drawing.Graphics]::FromImage($big)
-  $bg.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
-  $bg.DrawImage($bmp, 0, 0, $sw, $sh)
-  $big.Save($OutPath, [System.Drawing.Imaging.ImageFormat]::Png)
-  $bg.Dispose(); $big.Dispose()
-} else {
-  $bmp.Save($OutPath, [System.Drawing.Imaging.ImageFormat]::Png)
-}
-$g.Dispose(); $bmp.Dispose()
+$sw = [int][Math]::Round($rw * $scale)
+$sh = [int][Math]::Round($rh * $scale)
+$big = New-Object System.Drawing.Bitmap($sw, $sh)
+$bg = [System.Drawing.Graphics]::FromImage($big)
+$bg.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
+# 从窗口位图裁剪区域再缩放
+$srcRect = New-Object System.Drawing.Rectangle($rx, $ry, $rw, $rh)
+$dstRect = New-Object System.Drawing.Rectangle(0, 0, $sw, $sh)
+$bg.DrawImage($bmp, $dstRect, $srcRect, [System.Drawing.GraphicsUnit]::Pixel)
+$big.Save($OutPath, [System.Drawing.Imaging.ImageFormat]::Png)
+$bg.Dispose(); $big.Dispose(); $g.Dispose(); $bmp.Dispose()
 exit 0
 "##;
     let ps = ps.trim();
