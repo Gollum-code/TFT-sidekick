@@ -408,6 +408,120 @@ button.small {
   font-size: 13px;
 }
 
+/* ===== 全局错误 banner（统一入口） ===== */
+.error-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  margin-bottom: 10px;
+  background: rgba(240, 113, 111, 0.1);
+  border: 1px solid rgba(240, 113, 111, 0.28);
+  border-radius: 8px;
+  font-size: 12px;
+  color: #f0a0a0;
+  cursor: pointer;
+  user-select: none;
+}
+.error-banner-ico {
+  font-size: 13px;
+  flex-shrink: 0;
+}
+.error-banner-text {
+  flex: 1;
+  line-height: 1.35;
+}
+.error-banner-close {
+  background: none;
+  border: none;
+  color: #f0a0a0;
+  font-size: 12px;
+  cursor: pointer;
+  padding: 0 2px;
+  opacity: 0.7;
+}
+.error-banner-close:hover {
+  opacity: 1;
+}
+
+/* ===== 骨架屏 ===== */
+@keyframes skel-pulse {
+  0% { opacity: 0.4; }
+  50% { opacity: 0.8; }
+  100% { opacity: 0.4; }
+}
+.match-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* ===== 战绩筛选栏 ===== */
+.filter-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+.filter-bar .search-input {
+  flex: 1;
+  min-width: 140px;
+  max-width: 220px;
+}
+.filter-select {
+  background: var(--card);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 8px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.filter-group {
+  display: flex;
+  gap: 2px;
+  background: rgba(255, 255, 255, 0.04);
+  border-radius: 6px;
+  padding: 2px;
+}
+.filter-group .tab {
+  padding: 4px 8px;
+  font-size: 11px;
+  border-radius: 4px;
+  background: none;
+  border: none;
+  color: #8b95a1;
+  cursor: pointer;
+}
+.filter-group .tab.active {
+  background: rgba(255, 255, 255, 0.12);
+  color: #e6e6e6;
+}
+.skel-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 14px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.skel {
+  display: block;
+  height: 14px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.08);
+  animation: skel-pulse 1.5s ease-in-out infinite;
+}
+.skel-placement {
+  width: 28px;
+  height: 18px;
+}
+.skel-text {
+  width: 120px;
+}
+
 .empty {
   color: var(--faint);
   font-size: 14px;

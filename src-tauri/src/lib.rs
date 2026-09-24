@@ -588,27 +588,35 @@ async fn gameflow_loop(
     }
 }
 
-/// 保存窗口尺寸/位置到 window_state.json。
-fn save_window_state(window: &tauri::Window) -> tauri::Result<()> {
-    let size = match window.outer_size() {
-        Ok(s) => s,
-        Err(_) => return Ok(()),
-    };
+/// 保存窗口位置到 window_state.json（main / overlay 各自独立记录）。
+/// 兼容 `tauri::Window` 与 `tauri::WebviewWindow`。
+fn save_window_state<R: tauri::Runtime>(window: &tauri::window::Window<R>) -> tauri::Result<()> {
+    let size = window.outer_size()?;
     let position = window.outer_position().ok();
-    let path = match window.app_handle().path().app_data_dir() {
-        Ok(d) => d.join("window_state.json"),
-        Err(_) => return Ok(()),
-    };
+    let path = window.app_handle().path().app_data_dir()?.join("window_state.json");
     let (x, y) = match position {
         Some(p) => (Some(p.x), Some(p.y)),
         None => (None, None),
     };
-    let state = serde_json::json!({
+    let key = window.label().to_string();
+
+    // 读取已有状态，合并写入
+    let mut state: serde_json::Value = std::fs::read_to_string(&path)
+        .ok()
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or_else(|| serde_json::json!({}));
+    if !state.is_object() {
+        state = serde_json::json!({});
+    }
+    let entry = serde_json::json!({
         "width": size.width,
         "height": size.height,
         "x": x,
         "y": y,
     });
+    if let Some(obj) = state.as_object_mut() {
+        obj.insert(key.to_string(), entry);
+    }
     let _ = std::fs::create_dir_all(path.parent().unwrap());
     let _ = std::fs::write(&path, state.to_string());
     Ok(())
@@ -628,12 +636,30 @@ fn restore_window_state(app: &tauri::AppHandle) {
         Ok(v) => v,
         Err(_) => return,
     };
-    if let Some(w) = app.get_webview_window("main") {
+
+    // 兼容旧格式：顶层直接是 main 的字段
+    let get_entry = |label: &str| -> Option<serde_json::Value> {
+        if let Some(e) = v.get(label) {
+            return Some(e.clone());
+        }
+        if label == "main" && v.get("width").is_some() {
+            return Some(v.clone());
+        }
+        None
+    };
+
+    for (label, min_w, min_h) in [("main", 400u32, 300u32), ("overlay", 200, 200)] {
+        let Some(entry) = get_entry(label) else {
+            continue;
+        };
+        let Some(w) = app.get_webview_window(label) else {
+            continue;
+        };
         if let (Some(wd), Some(h)) = (
-            v.get("width").and_then(|x| x.as_u64()),
-            v.get("height").and_then(|x| x.as_u64()),
+            entry.get("width").and_then(|x| x.as_u64()),
+            entry.get("height").and_then(|x| x.as_u64()),
         ) {
-            if wd >= 400 && h >= 300 {
+            if wd >= min_w as u64 && h >= min_h as u64 && label == "main" {
                 let _ = w.set_size(tauri::PhysicalSize {
                     width: wd as u32,
                     height: h as u32,
@@ -641,8 +667,8 @@ fn restore_window_state(app: &tauri::AppHandle) {
             }
         }
         if let (Some(x), Some(y)) = (
-            v.get("x").and_then(|x| x.as_i64()),
-            v.get("y").and_then(|x| x.as_i64()),
+            entry.get("x").and_then(|x| x.as_i64()),
+            entry.get("y").and_then(|x| x.as_i64()),
         ) {
             let _ = w.set_position(tauri::PhysicalPosition { x: x as i32, y: y as i32 });
         }
@@ -656,6 +682,34 @@ fn toggle_overlay(app: AppHandle) -> Result<bool, String> {
         return Err("overlay 窗口未定义".into());
     };
     if w.is_visible().unwrap_or(false) {
+        // 隐藏前保存位置（写入 window_state.json 的 overlay 键）
+        if let Ok(size) = w.outer_size() {
+            if let Ok(position) = w.outer_position() {
+                if let Ok(dir) = app.path().app_data_dir() {
+                    let path = dir.join("window_state.json");
+                    let mut state: serde_json::Value = std::fs::read_to_string(&path)
+                        .ok()
+                        .and_then(|s| serde_json::from_str(&s).ok())
+                        .unwrap_or_else(|| serde_json::json!({}));
+                    if !state.is_object() {
+                        state = serde_json::json!({});
+                    }
+                    if let Some(obj) = state.as_object_mut() {
+                        obj.insert(
+                            "overlay".to_string(),
+                            serde_json::json!({
+                                "width": size.width,
+                                "height": size.height,
+                                "x": position.x,
+                                "y": position.y,
+                            }),
+                        );
+                    }
+                    let _ = std::fs::create_dir_all(path.parent().unwrap());
+                    let _ = std::fs::write(&path, state.to_string());
+                }
+            }
+        }
         let _ = w.hide();
         Ok(false)
     } else {

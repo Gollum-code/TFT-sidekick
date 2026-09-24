@@ -437,6 +437,31 @@ const view = ref<
   | "settings"
 >("matches");
 const matches = ref<MatchSummary[]>([]);
+// 战绩筛选：模式 / 名次范围 / 文本搜索
+const matchModeFilter = ref<string>("all");
+const matchPlaceFilter = ref<"all" | "win" | "top4" | "out">("all");
+const matchSearch = ref("");
+const filteredMatches = computed(() => {
+  let rows = matches.value;
+  if (matchModeFilter.value !== "all") {
+    rows = rows.filter((m) => (m.game_mode ?? "") === matchModeFilter.value);
+  }
+  if (matchPlaceFilter.value === "win") rows = rows.filter((m) => m.placement === 1);
+  else if (matchPlaceFilter.value === "top4") rows = rows.filter((m) => m.placement <= 4);
+  else if (matchPlaceFilter.value === "out") rows = rows.filter((m) => m.placement > 4);
+  const q = matchSearch.value.trim().toLowerCase();
+  if (q) {
+    rows = rows.filter((m) =>
+      (m.game_mode ?? "").toLowerCase().includes(q) || fmtDate(m.game_datetime).toLowerCase().includes(q)
+    );
+  }
+  return rows;
+});
+const matchModes = computed(() => {
+  const set = new Set<string>();
+  for (const m of matches.value) if (m.game_mode) set.add(m.game_mode);
+  return [...set];
+});
 
 // ===== 游戏内辅助悬浮窗（overlay 窗口专用） =====
 const isOverlay = getCurrentWindow().label === "overlay";
@@ -1881,6 +1906,35 @@ onMounted(async () => {
     }
   };
   window.addEventListener("keydown", onKeydown);
+
+  // 全局图片加载失败兜底：统一替换为占位图（事件捕获，覆盖动态渲染的 <img>）
+  document.addEventListener(
+    "error",
+    (e) => {
+      const el = e.target as HTMLImageElement;
+      if (el.tagName !== "IMG" || el.dataset.imgFallback === "1") return;
+      if (!el.src || el.src.includes("data:")) return;
+      el.dataset.imgFallback = "1";
+      const ic = document.createElement("canvas");
+      ic.width = 64;
+      ic.height = 64;
+      const g = ic.getContext("2d");
+      if (g) {
+        g.fillStyle = "#1c1c28";
+        g.fillRect(0, 0, 64, 64);
+        g.strokeStyle = "#3a3a4a";
+        g.lineWidth = 3;
+        g.strokeRect(8, 8, 48, 48);
+        g.fillStyle = "#5a5a6a";
+        g.font = "28px sans-serif";
+        g.textAlign = "center";
+        g.textBaseline = "middle";
+        g.fillText("?", 32, 34);
+      }
+      el.src = ic.toDataURL("image/png");
+    },
+    true
+  );
 });
 </script>
 
@@ -2215,6 +2269,13 @@ onMounted(async () => {
     <main class="content">
       <div v-if="toast" class="toast">{{ toast }}</div>
 
+      <!-- 全局错误提示（统一入口，关闭可清除） -->
+      <div v-if="error" class="error-banner" @click="error = ''">
+        <span class="error-banner-ico">⚠</span>
+        <span class="error-banner-text">{{ error }}</span>
+        <button class="error-banner-close" title="关闭">✕</button>
+      </div>
+
       <!-- 对局实时状态条（主窗口） -->
       <div v-if="live.available" class="live-bar">
         <span class="live-bar-dot" :class="{ live: overlayPhase === 'InProgress' }"></span>
@@ -2230,9 +2291,6 @@ onMounted(async () => {
         <header class="topbar">
           <h2>统计</h2>
         </header>
-
-        <div v-if="statsLoading" class="empty">加载中…</div>
-        <p v-if="error" class="error">{{ error }}</p>
 
         <template v-if="stats">
           <div class="stat-cards">
@@ -2327,7 +2385,6 @@ onMounted(async () => {
         </div>
 
         <div v-if="dataLoading" class="empty">加载中…</div>
-        <p v-if="error" class="error">{{ error }}</p>
 
         <!-- 赛季总览 -->
         <template v-if="dataTab === 'overview'">
@@ -3234,6 +3291,8 @@ onMounted(async () => {
           <div class="settings-row"><span class="settings-label">Ctrl/Cmd + 6</span><span class="settings-value">数据检索器</span></div>
           <div class="settings-row"><span class="settings-label">Ctrl/Cmd + 7</span><span class="settings-value">羁绊</span></div>
           <div class="settings-row"><span class="settings-label">Ctrl/Cmd + 8</span><span class="settings-value">强化符文</span></div>
+          <div class="settings-row"><span class="settings-label">Ctrl/Cmd + 0</span><span class="settings-value">开关游戏内悬浮窗</span></div>
+          <p class="hint" style="margin-top: 8px">侧边栏分组可折叠；Meta 数据 / 机制手册下的二级菜单也可用数字键切换。</p>
         </section>
 
         <section class="board-section">
@@ -3263,7 +3322,6 @@ onMounted(async () => {
         <p v-if="lastSync" class="hint" style="margin: 0 0 8px">{{ lastSync }}</p>
         <p v-if="tftData" class="hint" style="margin: 0 0 8px; font-size:11px; color:var(--faint)">更新时间: {{ new Date(tftData.timestamp).toLocaleString("zh-CN") }}</p>
         <p v-if="dataStale && !metaLoading" class="stale-banner" style="margin: 0 0 8px; padding: 6px 10px; border-radius: 6px; font-size: 12px; background: rgba(240,194,75,0.08); border: 1px solid rgba(240,194,75,0.3); color: var(--gold); cursor: pointer" @click="getMeta(true)">数据可能已过期，点击刷新</p>
-        <p v-if="error" class="error">{{ error }}</p>
 
         <template v-if="tftData">
           <!-- Meta 总览 -->
@@ -3814,13 +3872,46 @@ onMounted(async () => {
         </header>
 
         <p v-if="lastSync" class="hint">{{ lastSync }}</p>
-        <p v-if="error" class="error">{{ error }}</p>
 
-        <p v-if="matches.length === 0 && !loading" class="empty">
+        <!-- 筛选栏 -->
+        <div v-if="matches.length" class="filter-bar">
+          <input
+            v-model="matchSearch"
+            class="search-input"
+            placeholder="搜索模式/日期…"
+          />
+          <select v-model="matchModeFilter" class="filter-select">
+            <option value="all">全部模式</option>
+            <option v-for="m in matchModes" :key="m" :value="m">{{ m }}</option>
+          </select>
+          <div class="filter-group">
+            <button class="tab" :class="{ active: matchPlaceFilter === 'all' }" @click="matchPlaceFilter = 'all'">全部</button>
+            <button class="tab" :class="{ active: matchPlaceFilter === 'win' }" @click="matchPlaceFilter = 'win'">吃鸡</button>
+            <button class="tab" :class="{ active: matchPlaceFilter === 'top4' }" @click="matchPlaceFilter = 'top4'">前四</button>
+            <button class="tab" :class="{ active: matchPlaceFilter === 'out' }" @click="matchPlaceFilter = 'out'">后四</button>
+          </div>
+          <span class="muted tiny">{{ filteredMatches.length }} / {{ matches.length }} 局</span>
+        </div>
+
+        <!-- 加载骨架屏 -->
+        <div v-if="loading" class="match-skeleton">
+          <div v-for="i in 8" :key="i" class="skel-row">
+            <span class="skel skel-placement"></span>
+            <span class="skel skel-text" style="width: 180px"></span>
+            <span class="skel skel-text" style="width: 140px"></span>
+            <span class="skel skel-text" style="width: 40px"></span>
+          </div>
+        </div>
+
+        <p v-else-if="matches.length === 0" class="empty">
           还没有记录对局。打开客户端登录后，点击「同步战绩」。
         </p>
 
-        <table v-if="matches.length > 0" class="match-table">
+        <p v-else-if="filteredMatches.length === 0" class="empty">
+          没有符合条件的对局，试试调整筛选条件。
+        </p>
+
+        <table v-if="filteredMatches.length > 0" class="match-table">
           <thead>
             <tr>
               <th>名次</th>
@@ -3830,7 +3921,7 @@ onMounted(async () => {
             </tr>
           </thead>
           <tbody>
-            <tr v-for="m in matches" :key="m.game_id" @click="openMatch(m.game_id)">
+            <tr v-for="m in filteredMatches" :key="m.game_id" @click="openMatch(m.game_id)">
               <td class="placement" :class="`p${m.placement}`">#{{ m.placement }}</td>
               <td>{{ m.game_mode ?? "—" }}</td>
               <td>{{ fmtDate(m.game_datetime) }}</td>

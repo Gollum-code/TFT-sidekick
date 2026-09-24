@@ -24,8 +24,8 @@
       {
         "title": "TFT 对战助手",
         "label": "overlay",
-        "width": 360,
-        "height": 620,
+        "width": 400,
+        "height": 640,
         "decorations": false,
         "resizable": false,
         "alwaysOnTop": true,
