@@ -3,7 +3,7 @@
 
 use serde_json::{json, Map, Value};
 
-const COMP_SLUGS: [&str; 24] = [
+const COMP_SLUGS: [&str; 29] = [
     "dragon_95",
     "elderwood_95",
     "vanguard_morgana",
@@ -28,6 +28,11 @@ const COMP_SLUGS: [&str; 24] = [
     "caitlyn",
     "rapidfire_aphelios",
     "defender_cassiopeia",
+    "dark_ritual",
+    "azir_reroll",
+    "warwick_murkwolf",
+    "elderwood_blossom",
+    "inferno_hunter",
 ];
 
 /// 基础页面：path → 合并时写入的 key（或自定义处理标记）
