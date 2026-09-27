@@ -149,6 +149,61 @@ async fn get_augments(state: State<'_, AppState>) -> Result<Vec<ItemData>, Strin
     Ok(sd.augments())
 }
 
+/// TFT 阵容码（Team Planner Code）映射表。
+/// 从 CDragon 拉取 teamplanner 数据并缓存，返回 code → character_id + name。
+/// code 即 `team_planner_code - 1000`（每个英雄按 character_id 字母序的 hex 序号）。
+#[tauri::command]
+async fn get_teamplanner_map(state: State<'_, AppState>) -> Result<serde_json::Value, String> {
+    const URL: &str =
+        "https://raw.communitydragon.org/latest/plugins/rcp-be-lol-game-data/global/default/v1/tftchampions-teamplanner.json";
+    let cache = state.data_dir.join("tft_teamplanner.json");
+    let bytes = if cache.exists() {
+        std::fs::read(&cache).map_err(|e| e.to_string())?
+    } else {
+        let resp = reqwest::get(URL)
+            .await
+            .map_err(|e| format!("拉取 teamplanner 失败: {e}"))?;
+        let b = resp.bytes().await.map_err(|e| e.to_string())?.to_vec();
+        std::fs::create_dir_all(&cache.parent().unwrap()).ok();
+        std::fs::write(&cache, &b).map_err(|e| e.to_string())?;
+        b
+    };
+    let root: serde_json::Value =
+        serde_json::from_slice(&bytes).map_err(|e| format!("解析失败: {e}"))?;
+    // 找当前 set：数字最大的 TFTSetN key
+    let set_key = root
+        .as_object()
+        .ok_or("teamplanner 数据格式错误")?
+        .keys()
+        .filter_map(|k| {
+            k.strip_prefix("TFTSet")
+                .and_then(|n| n.parse::<u32>().ok())
+                .map(|n| (n, k))
+        })
+        .max_by_key(|(n, _)| *n)
+        .map(|(_, k)| k.to_string())
+        .ok_or("未找到 TFTSet 数据")?;
+    let arr = root
+        .get(&set_key)
+        .and_then(|v| v.as_array())
+        .ok_or("TFTSet 数据不是数组")?;
+    let mut map = serde_json::Map::new();
+    for c in arr {
+        let id = c.get("character_id").and_then(|v| v.as_str()).unwrap_or("");
+        let name = c.get("display_name").and_then(|v| v.as_str()).unwrap_or("");
+        let code = c.get("team_planner_code").and_then(|v| v.as_u64());
+        if id.is_empty() || code.is_none() {
+            continue;
+        }
+        let hex_code = code.unwrap().saturating_sub(1000);
+        map.insert(
+            hex_code.to_string(),
+            serde_json::json!({ "id": id, "name": name }),
+        );
+    }
+    Ok(serde_json::Value::Object(map))
+}
+
 #[tauri::command]
 fn get_shop_odds() -> Vec<ShopOddsLevel> {
     const ODDS: [[f32; 5]; 10] = [
@@ -735,13 +790,40 @@ fn toggle_overlay(app: AppHandle) -> Result<bool, String> {
 /// 返回识别出的整段文本（棋子名之间有空白，前端模糊匹配）。
 #[tauri::command]
 fn ocr_shop_screen() -> Result<String, String> {
+    ocr_region("shop_capture.png", (15, 86, 70, 14))
+}
+
+/// 逐格识别商店 5 个格子（每个格子一张卡片 OCR），返回 5 段文本。
+/// 商店横条 15%~85%（宽 70%），5 格均分，每格宽 14%。返回顺序即左到右。
+#[tauri::command]
+fn ocr_shop_slots() -> Result<Vec<String>, String> {
+    let mut out = Vec::with_capacity(5);
+    for i in 0..5 {
+        let x = 15 + i * 14;
+        let text = ocr_region(&format!("shop_slot_{i}.png"), (x, 86, 14, 14))
+            .map_err(|e| format!("第{}格: {e}", i + 1))?;
+        out.push(text);
+    }
+    Ok(out)
+}
+
+/// 截图游戏窗口强化符文选择区域并 OCR 识别文字。
+/// 强化符文选择界面是 3 张卡片横排居中，卡片标题位于客户区中部偏上；
+/// 按百分比定位以适配任意分辨率/无边框窗口。
+/// 返回识别出的整段文本（3 个强化符文名，前端模糊匹配）。
+#[tauri::command]
+fn ocr_augments_screen() -> Result<String, String> {
+    // 强化符文卡片标题带：横向 5%~95%，纵向 28%~44%（标题行）。
+    // 2 倍放大后再 OCR，提高小字识别率。
+    ocr_region("augments_capture.png", (5, 28, 90, 16))
+}
+
+/// 共用截图+OCR：region = (x, y, w, h) 百分比，scale 固定 2。
+fn ocr_region(file_name: &str, region: (i32, i32, i32, i32)) -> Result<String, String> {
     let dir = std::env::temp_dir().join("tft-sidekick-ocr");
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-    let png = dir.join("shop_capture.png");
-    // 商店区域（百分比，相对客户区）：横向 15%~85%，纵向 86%~100%（底部一条）。
-    // 2 倍放大后再 OCR，提高棋子名小字识别率。
-    ocr::capture_game_window(&png, Some((15, 86, 70, 14)), 2.0)
-        .map_err(|e| e.to_string())?;
+    let png = dir.join(file_name);
+    ocr::capture_game_window(&png, Some(region), 2.0).map_err(|e| e.to_string())?;
     let text = ocr::ocr_image(&png).map_err(|e| e.to_string())?;
     Ok(text)
 }
@@ -885,6 +967,7 @@ pub fn run() {
             get_champions,
             get_traits,
             get_augments,
+            get_teamplanner_map,
             get_shop_odds,
             get_game_rules,
             get_meta,
@@ -895,7 +978,9 @@ pub fn run() {
             toggle_overlay,
             set_overlay_state,
             get_live_state,
-            ocr_shop_screen
+            ocr_shop_screen,
+            ocr_shop_slots,
+            ocr_augments_screen
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
