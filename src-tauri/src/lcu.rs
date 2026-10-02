@@ -558,6 +558,9 @@ fn map_game(game: &serde_json::Value, my_puuid: &str) -> Option<MatchDetail> {
     let game_version = pick(obj, &["gameVersion", "game_version"])
         .and_then(|v| v.as_str())
         .map(String::from);
+    let queue_id = pick(obj, &["queueId", "queue_id"])
+        .and_then(|v| v.as_i64())
+        .map(|q| q as i32);
 
     let participants = obj.get("participants")?.as_array()?;
     let me = participants
@@ -584,6 +587,7 @@ fn map_game(game: &serde_json::Value, my_puuid: &str) -> Option<MatchDetail> {
             level,
             // 国服 LCU 不提供海克斯强化数据。
             augments: Vec::new(),
+            queue_id,
         },
         units,
         traits,

@@ -94,10 +94,10 @@ function Find-LolWindow {
 }
 $hwnd = Find-LolWindow
 if ($hwnd -eq [IntPtr]::Zero) { exit 1 }
-# 如果最小化则先恢复
+# 如果最小化则先恢复（PrintWindow 对最小化窗口抓不到渲染内容）
 if ([Win32]::IsIconic($hwnd)) { [Win32]::ShowWindow($hwnd, 9) | Out-Null; Start-Sleep -Milliseconds 300 }
-[Win32]::SetForegroundWindow($hwnd) | Out-Null
-Start-Sleep -Milliseconds 150
+# 注意：不要 SetForegroundWindow —— 对局中扫描会抢走游戏焦点，且 PrintWindow(PW_RENDERFULLCONTENT)
+# 即使窗口被遮挡也能捕获内容，不需要置前。
 $rect = New-Object Win32+RECT
 [Win32]::GetClientRect($hwnd, [ref]$rect) | Out-Null
 $pt = New-Object Win32+POINT

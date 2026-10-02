@@ -9,6 +9,7 @@ pub struct MatchSummary {
     pub placement: i32,
     pub level: Option<i32>,
     pub augments: Vec<String>,
+    pub queue_id: Option<i32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

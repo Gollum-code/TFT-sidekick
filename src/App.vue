@@ -13,6 +13,7 @@ interface MatchSummary {
   placement: number;
   level: number | null;
   augments: string[];
+  queue_id: number | null;
 }
 
 interface AppInfo {
@@ -437,14 +438,32 @@ const view = ref<
   | "settings"
 >("matches");
 const matches = ref<MatchSummary[]>([]);
-// 战绩筛选：模式 / 名次范围 / 文本搜索
-const matchModeFilter = ref<string>("all");
+// 战绩筛选：模式（队列）/ 名次范围 / 文本搜索
+const QUEUE_LABELS: Record<number, string> = {
+  1090: "排位",
+  1130: "匹配",
+  1100: "狂暴",
+  1110: "双人",
+  1160: "疾驰",
+  1165: "赛季回归",
+  1200: "四人对战",
+};
+function queueLabel(id: number | null | undefined): string {
+  if (id == null || id === 0) return "";
+  return QUEUE_LABELS[id] ?? `队列 ${id}`;
+}
+const matchQueueFilter = ref<number | "all">("all");
+const matchQueues = computed(() => {
+  const set = new Set<number>();
+  for (const m of matches.value) if (m.queue_id) set.add(m.queue_id);
+  return [...set].sort((a, b) => a - b);
+});
 const matchPlaceFilter = ref<"all" | "win" | "top4" | "out">("all");
 const matchSearch = ref("");
 const filteredMatches = computed(() => {
   let rows = matches.value;
-  if (matchModeFilter.value !== "all") {
-    rows = rows.filter((m) => (m.game_mode ?? "") === matchModeFilter.value);
+  if (matchQueueFilter.value !== "all") {
+    rows = rows.filter((m) => m.queue_id === matchQueueFilter.value);
   }
   if (matchPlaceFilter.value === "win") rows = rows.filter((m) => m.placement === 1);
   else if (matchPlaceFilter.value === "top4") rows = rows.filter((m) => m.placement <= 4);
@@ -456,11 +475,6 @@ const filteredMatches = computed(() => {
     );
   }
   return rows;
-});
-const matchModes = computed(() => {
-  const set = new Set<string>();
-  for (const m of matches.value) if (m.game_mode) set.add(m.game_mode);
-  return [...set];
 });
 
 // ===== 游戏内辅助悬浮窗（overlay 窗口专用） =====
@@ -1490,12 +1504,17 @@ async function hideWin() {
   await getCurrentWindow().hide();
 }
 
-async function openStats() {
+const statsQueue = ref<number | "all">("all");
+async function openStats(queue: number | "all" = statsQueue.value) {
   view.value = "stats";
+  statsQueue.value = queue;
   statsLoading.value = true;
   error.value = "";
   try {
-    stats.value = await invoke<Stats>("get_stats");
+    stats.value = await invoke<Stats>(
+      "get_stats",
+      queue === "all" ? {} : { queue }
+    );
   } catch (e) {
     error.value = String(e);
   } finally {
@@ -2055,6 +2074,14 @@ function statOf(slug: string): TFCompStat {
 }
 function compName(slug: string): string {
   return cardOf(slug).display_name_cn || cardOf(slug).display_name_en || slug;
+}
+/** 是否派生变体阵容（主阵容 + "__v{n}" 后缀生成） */
+function isVariantComp(slug: string): boolean {
+  return /__v\d+$/.test(slug);
+}
+/** 变体所属的主阵容 slug（去掉 __vN 后缀） */
+function variantBaseOf(slug: string): string {
+  return slug.replace(/__v\d+$/, "");
 }
 function compCardIcon(slug: string): string {
   const c = cardOf(slug);
@@ -3400,6 +3427,17 @@ onMounted(async () => {
         </header>
 
         <template v-if="stats">
+          <div class="filter-group" style="margin-bottom: 12px">
+            <button class="tab" :class="{ active: statsQueue === 'all' }" @click="openStats('all')">全部</button>
+            <button
+              v-for="q in [1090, 1130, 1100, 1110]"
+              :key="q"
+              class="tab"
+              :class="{ active: statsQueue === q }"
+              @click="openStats(q)"
+            >{{ queueLabel(q) }}</button>
+          </div>
+
           <div class="stat-cards">
             <div class="stat-card">
               <div class="stat-value">{{ stats.total }}</div>
@@ -4133,6 +4171,9 @@ onMounted(async () => {
                 <img loading="lazy" :src="tfImg(selectedCard.compIcon)" :alt="selectedCard.display_name_cn" class="top-icon" />
                 {{ selectedCard.display_name_cn }}
                 <span class="muted en-name">{{ selectedCard.display_name_en }}</span>
+                <span v-if="isVariantComp(selectedCompSlug as string)" class="variant-badge clickable" :title="`查看主阵容 ${compName(variantBaseOf(selectedCompSlug as string))}`" @click="showCompDetail(variantBaseOf(selectedCompSlug as string))">
+                  {{ compName(variantBaseOf(selectedCompSlug as string)) }} 的变体 ↗
+                </span>
               </h2>
               <button
                 class="ghost small pin-btn"
@@ -4437,7 +4478,7 @@ onMounted(async () => {
             </div>
           </section>
           <section class="board-section">
-            <h3>全部阵容</h3>
+            <h3>全部阵容（{{ tftData.compositionCards.length }} 套，含变体）</h3>
             <div class="comp-grid">
               <div v-for="c in tftData.compositionCards" :key="c.slug" class="comp-card" @click="showCompDetail(c.slug)">
                 <div class="comp-card-head">
@@ -4446,6 +4487,7 @@ onMounted(async () => {
                     <span class="comp-card-name">{{ c.display_name_cn }}</span>
                     <span class="comp-card-en muted">{{ c.display_name_en }}</span>
                   </div>
+                  <span v-if="isVariantComp(c.slug)" class="variant-badge" :title="`${compName(variantBaseOf(c.slug))} 的变体`">变体</span>
                   <span class="comp-cost-tag">${{ c.compCost }}</span>
                 </div>
                 <div class="comp-card-stats">
@@ -5130,9 +5172,9 @@ onMounted(async () => {
             class="search-input"
             placeholder="搜索模式/日期…"
           />
-          <select v-model="matchModeFilter" class="filter-select">
+          <select v-model="matchQueueFilter" class="filter-select">
             <option value="all">全部模式</option>
-            <option v-for="m in matchModes" :key="m" :value="m">{{ m }}</option>
+            <option v-for="q in matchQueues" :key="q" :value="q">{{ queueLabel(q) }}</option>
           </select>
           <div class="filter-group">
             <button class="tab" :class="{ active: matchPlaceFilter === 'all' }" @click="matchPlaceFilter = 'all'">全部</button>
@@ -5173,7 +5215,7 @@ onMounted(async () => {
           <tbody>
             <tr v-for="m in filteredMatches" :key="m.game_id" @click="openMatch(m.game_id)">
               <td class="placement" :class="`p${m.placement}`">#{{ m.placement }}</td>
-              <td>{{ m.game_mode ?? "—" }}</td>
+              <td>{{ queueLabel(m.queue_id) || m.game_mode || "—" }}</td>
               <td>{{ fmtDate(m.game_datetime) }}</td>
               <td>{{ m.level ?? "—" }}</td>
             </tr>

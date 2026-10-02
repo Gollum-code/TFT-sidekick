@@ -84,7 +84,7 @@ impl Database {
 
     pub fn list_matches(&self, limit: u32) -> Result<Vec<MatchSummary>, DbError> {
         let mut stmt = self.conn.prepare(
-            "SELECT game_id, game_mode, game_version, game_datetime, placement, level, augments
+            "SELECT game_id, game_mode, game_version, game_datetime, placement, level, augments, queue_id
              FROM matches ORDER BY game_datetime DESC LIMIT ?1",
         )?;
         let rows = stmt.query_map([limit], |row| {
@@ -103,6 +103,7 @@ impl Database {
                 placement: row.get(4)?,
                 level: row.get(5)?,
                 augments,
+                queue_id: row.get(7)?,
             })
         })?;
 
@@ -113,7 +114,7 @@ impl Database {
         let summary = self
             .conn
             .query_row(
-                "SELECT game_id, game_mode, game_version, game_datetime, placement, level, augments
+                "SELECT game_id, game_mode, game_version, game_datetime, placement, level, augments, queue_id
                  FROM matches WHERE game_id = ?1",
                 [game_id],
                 |row| {
@@ -132,6 +133,7 @@ impl Database {
                         placement: row.get(4)?,
                         level: row.get(5)?,
                         augments,
+                        queue_id: row.get(7)?,
                     })
                 },
             )
@@ -199,7 +201,7 @@ impl Database {
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, NULL, ?8, ?9, ?10)",
             params![
                 s.game_id,
-                0i64,
+                s.queue_id.unwrap_or(0),
                 s.game_mode,
                 s.game_version,
                 s.game_datetime,
@@ -269,17 +271,26 @@ pub struct DbStats {
 }
 
 impl Database {
-    pub fn get_stats(&self) -> Result<DbStats, DbError> {
+    /// 统计。`queue` 传入队列 id 时只统计该队列（如 1090=排位），None = 全部模式。
+    pub fn get_stats(&self, queue: Option<i32>) -> Result<DbStats, DbError> {
+        let where_clause = match queue {
+            Some(_) => " WHERE queue_id = ?1",
+            None => "",
+        };
+        let queue_params = || rusqlite::params_from_iter(queue.iter().copied());
+
         let (total, wins, top4, sum_placement, sum_level, level_count): (i64, i64, i64, i64, i64, i64) =
             self.conn.query_row(
-                "SELECT COUNT(*),
-                        COALESCE(SUM(CASE WHEN placement = 1 THEN 1 ELSE 0 END), 0),
-                        COALESCE(SUM(CASE WHEN placement <= 4 THEN 1 ELSE 0 END), 0),
-                        COALESCE(SUM(placement), 0),
-                        COALESCE(SUM(level), 0),
-                        COALESCE(SUM(CASE WHEN level IS NOT NULL THEN 1 ELSE 0 END), 0)
-                 FROM matches",
-                [],
+                &format!(
+                    "SELECT COUNT(*),
+                            COALESCE(SUM(CASE WHEN placement = 1 THEN 1 ELSE 0 END), 0),
+                            COALESCE(SUM(CASE WHEN placement <= 4 THEN 1 ELSE 0 END), 0),
+                            COALESCE(SUM(placement), 0),
+                            COALESCE(SUM(level), 0),
+                            COALESCE(SUM(CASE WHEN level IS NOT NULL THEN 1 ELSE 0 END), 0)
+                     FROM matches{where_clause}",
+                ),
+                queue_params(),
                 |row| {
                     Ok((
                         row.get(0)?,
@@ -294,10 +305,10 @@ impl Database {
 
         let mut placement_dist = [0u32; 8];
         {
-            let mut stmt = self
-                .conn
-                .prepare("SELECT placement, COUNT(*) FROM matches GROUP BY placement")?;
-            let rows = stmt.query_map([], |row| {
+            let mut stmt = self.conn.prepare(&format!(
+                "SELECT placement, COUNT(*) FROM matches{where_clause} GROUP BY placement"
+            ))?;
+            let rows = stmt.query_map(queue_params(), |row| {
                 Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?))
             })?;
             for r in rows {
@@ -308,8 +319,8 @@ impl Database {
             }
         }
 
-        let top_traits = self.top_by("match_traits", "trait_id")?;
-        let top_units = self.top_by("match_units", "character_id")?;
+        let top_traits = self.top_by("match_traits", "trait_id", queue)?;
+        let top_units = self.top_by("match_units", "character_id", queue)?;
 
         Ok(DbStats {
             total: total as u32,
@@ -324,12 +335,30 @@ impl Database {
         })
     }
 
-    fn top_by(&self, table: &str, col: &str) -> Result<Vec<(String, u32)>, DbError> {
-        let sql = format!(
-            "SELECT {col}, COUNT(*) AS c FROM {table} GROUP BY {col} ORDER BY c DESC LIMIT 10"
-        );
+    fn top_by(
+        &self,
+        table: &str,
+        col: &str,
+        queue: Option<i32>,
+    ) -> Result<Vec<(String, u32)>, DbError> {
+        // queue_id 只在 matches 表上，统计子表需经 game_id 关联过滤。
+        let (sql, params): (String, Vec<i32>) = match queue {
+            Some(q) => (
+                format!(
+                    "SELECT t.{col}, COUNT(*) AS c FROM {table} t JOIN matches m ON m.game_id = t.game_id \
+                     WHERE m.queue_id = ?1 GROUP BY t.{col} ORDER BY c DESC LIMIT 10"
+                ),
+                vec![q],
+            ),
+            None => (
+                format!(
+                    "SELECT {col}, COUNT(*) AS c FROM {table} GROUP BY {col} ORDER BY c DESC LIMIT 10"
+                ),
+                Vec::new(),
+            ),
+        };
         let mut stmt = self.conn.prepare(&sql)?;
-        let rows = stmt.query_map([], |row| {
+        let rows = stmt.query_map(rusqlite::params_from_iter(params.iter().copied()), |row| {
             Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)? as u32))
         })?;
         rows.collect::<Result<Vec<_>, _>>().map_err(DbError::from)
@@ -351,6 +380,7 @@ mod tests {
                 placement,
                 level,
                 augments: vec![],
+                queue_id: None,
             },
             units: vec![
                 MatchUnit {
@@ -391,7 +421,7 @@ mod tests {
         db.insert_match(&sample_match("3", 5, Some(7))).unwrap();
         db.insert_match(&sample_match("4", 8, None)).unwrap();
 
-        let s = db.get_stats().unwrap();
+        let s = db.get_stats(None).unwrap();
         assert_eq!(s.total, 4);
         assert_eq!(s.wins, 1);
         assert_eq!(s.top4, 2);
@@ -402,6 +432,40 @@ mod tests {
         assert_eq!(s.placement_dist[7], 1);
         assert_eq!(s.top_units.len(), 2);
         assert_eq!(s.top_traits.len(), 1);
+
+        let _ = std::fs::remove_file(&dir);
+    }
+
+    #[test]
+    fn stats_filter_by_queue() {
+        let dir = std::env::temp_dir().join("tft_stats_queue_test.db");
+        let _ = std::fs::remove_file(&dir);
+        let db = Database::open(&dir).unwrap();
+        let mut ranked = sample_match("1", 1, None);
+        ranked.summary.queue_id = Some(1090);
+        let mut normal = sample_match("2", 3, None);
+        normal.summary.queue_id = Some(1130);
+        // 让两局单位不同，便于观察过滤是否生效
+        normal.units.retain(|u| u.character_id == "A");
+        db.insert_match(&ranked).unwrap();
+        db.insert_match(&normal).unwrap();
+
+        let all = db.get_stats(None).unwrap();
+        assert_eq!(all.total, 2);
+        assert_eq!(all.top_units.len(), 2); // A、B
+
+        let ranked_only = db.get_stats(Some(1090)).unwrap();
+        assert_eq!(ranked_only.total, 1);
+        assert_eq!(ranked_only.wins, 1);
+        assert_eq!(ranked_only.placement_dist[0], 1);
+        // 排位局含 A、B；匹配局只有 A，若不过滤 top_units 也应为 2——
+        // 用 wins/total 区分即可：排位 1 局 1 胜，混合后胜率 1/2。
+        assert_eq!(ranked_only.sum_placement, 1);
+
+        let normal_only = db.get_stats(Some(1130)).unwrap();
+        assert_eq!(normal_only.total, 1);
+        assert_eq!(normal_only.wins, 0);
+        assert_eq!(normal_only.top_units.len(), 1); // 仅 A
 
         let _ = std::fs::remove_file(&dir);
     }

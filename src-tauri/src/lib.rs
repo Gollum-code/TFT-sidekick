@@ -32,6 +32,20 @@ struct AppState {
     meta_json_path: PathBuf,
 }
 
+/// 缓存文件是否明显过时（超过 7 天，补丁通常每周更新）。
+fn static_data_stale(path: &std::path::Path) -> bool {
+    let Ok(meta) = std::fs::metadata(path) else {
+        return true;
+    };
+    let Ok(modified) = meta.modified() else {
+        return true;
+    };
+    match std::time::SystemTime::now().duration_since(modified) {
+        Ok(age) => age > std::time::Duration::from_secs(7 * 24 * 3600),
+        Err(_) => true,
+    }
+}
+
 async fn ensure_static_data(state: &AppState) -> Result<Arc<StaticData>, String> {
     {
         let guard = state.static_data.lock().await;
@@ -43,6 +57,11 @@ async fn ensure_static_data(state: &AppState) -> Result<Arc<StaticData>, String>
     let path = state.data_dir.join("cdragon_tft_zhcn.json");
     if !path.exists() {
         StaticData::download(&path).await.map_err(|e| e.to_string())?;
+    } else if static_data_stale(&path) {
+        // 缓存超过一周：尝试刷新到最新补丁；失败则沿用旧缓存，不阻塞任何功能。
+        if let Err(e) = StaticData::download(&path).await {
+            eprintln!("[tft-sidekick] 刷新 CDragon 静态数据失败（沿用旧缓存）: {e}");
+        }
     }
     let sd = StaticData::load(&path)
         .map_err(|e| e.to_string())?
@@ -68,10 +87,13 @@ async fn get_match(state: State<'_, AppState>, game_id: String) -> Result<Enrich
 }
 
 #[tauri::command]
-async fn get_stats(state: State<'_, AppState>) -> Result<Stats, String> {
+async fn get_stats(
+    state: State<'_, AppState>,
+    queue: Option<i32>,
+) -> Result<Stats, String> {
     let raw = {
         let db = state.db.lock().map_err(|e| e.to_string())?;
-        db.get_stats().map_err(|e| e.to_string())?
+        db.get_stats(queue).map_err(|e| e.to_string())?
     };
     let sd = ensure_static_data(&state).await?;
 

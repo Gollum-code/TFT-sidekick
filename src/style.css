@@ -461,6 +461,27 @@ button.small {
 }
 
 /* Pin 阵容 */
+.variant-badge {
+  display: inline-block;
+  padding: 1px 7px;
+  font-size: 10px;
+  font-weight: 600;
+  color: #7bb8f0;
+  background: rgba(77,157,224,0.14);
+  border: 1px solid rgba(77,157,224,0.4);
+  border-radius: 8px;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+.variant-badge.clickable {
+  cursor: pointer;
+}
+.variant-badge.clickable:hover {
+  background: rgba(77,157,224,0.25);
+}
+.comp-card-title .variant-badge {
+  margin-right: 4px;
+}
 .pin-btn.pinned {
   border-color: var(--gold-bright);
   color: var(--gold-bright);

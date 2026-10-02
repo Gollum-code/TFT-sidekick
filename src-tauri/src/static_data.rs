@@ -670,6 +670,7 @@ mod tests {
                 placement: 1,
                 level: Some(9),
                 augments: vec![],
+                queue_id: None,
             },
             units: vec![MatchUnit {
                 character_id: "DA_18_Xayah".into(),
