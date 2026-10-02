@@ -421,6 +421,18 @@ interface TFTtableData {
     itemCategories: Record<string, string[]>;
     unitCategories: Record<string, string[]>;
   }>;
+  /** 补丁配置表：商店概率/规则/经济节奏（随 tftable_data.json 更新，缺失时前端走内置默认） */
+  patchTables?: {
+    shop_odds?: number[][];
+    game_rules?: { title: string; rows: string[][] }[];
+    econ_timeline?: {
+      stage: string;
+      targetLevel: number;
+      phase_label: string;
+      items: { label: string; desc: string }[];
+    }[];
+    level_guide?: { level: number; stage: string; board: number; focus: string; odds: number[] }[];
+  };
 }
 
 const view = ref<
@@ -1532,8 +1544,8 @@ const traits = ref<TraitData[]>([]);
 const augments = ref<ItemData[]>([]);
 const shopOdds = ref<ShopOddsLevel[]>([]);
 const gameRules = ref<RulesSection[]>([]);
-// 经济节奏时间轴（标准参考，非实时）
-const econTimeline: {
+// 经济节奏时间轴（标准参考，非实时）。优先取 tftable_data.patchTables（随补丁更新），缺失用内置默认。
+const DEFAULT_ECON_TIMELINE: {
   stage: string;
   targetLevel: number;
   phase_label: string;
@@ -1625,8 +1637,14 @@ const econTimeline: {
   },
 ];
 
+const econTimeline = computed(() => {
+  const pt = tftData.value?.patchTables?.econ_timeline;
+  if (Array.isArray(pt) && pt.length) return pt;
+  return DEFAULT_ECON_TIMELINE;
+});
+
 // 按等级参考表：每个等级对应标准阶段 / 场上人数 / 该等级该做的事
-const levelGuide: {
+const DEFAULT_LEVEL_GUIDE: {
   level: number;
   stage: string;
   board: number;
@@ -1644,12 +1662,18 @@ const levelGuide: {
   { level: 9, stage: "5-1+", board: 9, focus: "冲 9 级找 5 费 2 星定上限", odds: [10, 20, 25, 35, 10] },
 ];
 
+const levelGuide = computed(() => {
+  const pt = tftData.value?.patchTables?.level_guide;
+  if (Array.isArray(pt) && pt.length) return pt;
+  return DEFAULT_LEVEL_GUIDE;
+});
+
 /** 对局中：当前 stage 对应的阶段参考行（用于高亮） */
 const currentEconRow = computed(() => {
   if (!live.value.available || !live.value.stage) return null;
   const { major, minor } = parseStage(live.value.stage);
   const t = major * 10 + minor;
-  for (const row of econTimeline) {
+  for (const row of econTimeline.value) {
     const m = /(\d+)-(\d+)/.exec(row.stage);
     if (!m) continue;
     const start = parseInt(m[1], 10) * 10 + parseInt(m[2], 10);
@@ -1662,7 +1686,7 @@ const currentEconRow = computed(() => {
 /** 对局中：当前等级对应的等级参考行（用于高亮） */
 const currentLevelGuideRow = computed(() => {
   if (!live.value.available || !live.value.level) return null;
-  return levelGuide.find((g) => g.level === live.value.level) ?? null;
+  return levelGuide.value.find((g) => g.level === live.value.level) ?? null;
 });
 
 // ===== 阵容 × 阶段攻略（每套阵容每个阶段的参考） =====
@@ -2617,18 +2641,77 @@ function back() {
   selected.value = null;
 }
 
-// 对局详情：按 position_x/y 构建棋盘布局（7列×4行）。
-// 无站位数据时返回 null，前端仅在有站位时显示棋盘。
-const matchBoard = computed(() => {
+// 对局详情棋盘（7列×4行）。
+// 国服 LCU 对局历史不提供真实站位，因此：
+// 1) 若未来数据源补齐 position_x/y，优先渲染真实站位；
+// 2) 否则按本局 final units 反查最接近的 meta 阵容，渲染其 teamCode「参考预设站位」，
+//    局内实际持有的核心棋子叠加星级，未持有的格子标「缺」。
+interface MatchBoardCell {
+  unit: { id: string; name: string; icon: string; cost: number };
+  tier: number | null;
+  held: boolean;
+}
+const matchBoard = computed<{
+  hasBoard: boolean;
+  isReference: boolean;
+  compName: string;
+  cells: (MatchBoardCell | null)[];
+} | null>(() => {
   if (!selected.value || !selected.value.units.length) return null;
-  if (selected.value.units.every((u) => u.position_x == null || u.position_y == null)) return null;
-  const grid: Record<number, EnrichedUnit> = {};
+  const cells = new Array<MatchBoardCell | null>(28).fill(null);
+
+  // 真实站位（未来数据源补齐时生效）
+  let hasReal = false;
   for (const u of selected.value.units) {
     const x = u.position_x ?? -1;
     const y = u.position_y ?? -1;
-    if (x >= 0 && x < 7 && y >= 0 && y < 4) grid[y * 7 + x] = u;
+    if (x >= 0 && x < 7 && y >= 0 && y < 4) {
+      cells[y * 7 + x] = {
+        unit: { id: u.character_id, name: u.name || u.character_id, icon: u.icon_url, cost: u.cost ?? 0 },
+        tier: u.tier,
+        held: true,
+      };
+      hasReal = true;
+    }
   }
-  return { grid, hasBoard: Object.keys(grid).length > 0 };
+  if (hasReal) return { hasBoard: true, isReference: false, compName: "", cells };
+
+  // 参考站位：匹配本局最接近的阵容（核心交集 ≥3）
+  if (!tftData.value) return null;
+  const byId = new Map(selected.value.units.map((u) => [u.character_id, u]));
+  let best: { slug: string; matched: number; total: number } | null = null;
+  for (const slug of Object.keys(tftData.value.compDetails)) {
+    const ids = tftData.value.compDetails[slug].composition.overview.coreUnits.map((u) => u.id);
+    const matched = ids.filter((id) => byId.has(id)).length;
+    if (
+      matched >= 3 &&
+      (!best || matched > best.matched || (matched === best.matched && best.total > ids.length))
+    ) {
+      best = { slug, matched, total: ids.length };
+    }
+  }
+  if (!best) return null;
+
+  const ov = tftData.value.compDetails[best.slug].composition.overview;
+  const { grid } = buildBoardGrid(parseTeamCode(ov.teamCode));
+  for (let i = 0; i < 28; i++) {
+    const ord = grid[i];
+    if (ord && ord >= 1 && ord <= ov.coreUnits.length) {
+      const tu = ov.coreUnits[ord - 1];
+      const match = byId.get(tu.id);
+      cells[i] = {
+        unit: {
+          id: tu.id,
+          name: tu.nameCn || tu.name,
+          icon: match?.icon_url || unitIcon(tu.id),
+          cost: tu.cost,
+        },
+        tier: match?.tier ?? null,
+        held: !!match,
+      };
+    }
+  }
+  return { hasBoard: true, isReference: true, compName: compName(best.slug), cells };
 });
 
 function costColor(cost: number | null) {
@@ -5278,18 +5361,19 @@ onMounted(async () => {
             </div>
           </section>
 
-          <!-- 站位棋盘（仅在有站位数据时显示） -->
+          <!-- 站位棋盘（无真实站位时展示已匹配阵容的参考预设站位） -->
           <section v-if="matchBoard && matchBoard.hasBoard" class="board-section">
-            <h3>站位</h3>
+            <h3>站位 <span v-if="matchBoard.isReference" class="muted">配合参考 · {{ matchBoard.compName }}</span></h3>
             <div class="match-board">
               <div
-                v-for="idx in 28"
+                v-for="(cell, idx) in matchBoard.cells"
                 :key="idx"
                 class="board-cell"
               >
-                <div v-if="matchBoard.grid[idx - 1]" class="cell-unit">
-                  <img loading="lazy" :src="matchBoard.grid[idx - 1].icon_url || unitIcon(matchBoard.grid[idx - 1].character_id)" :alt="matchBoard.grid[idx - 1].name" class="cell-icon" :style="{ borderColor: costColor(matchBoard.grid[idx - 1].cost) }" />
-                  <span v-if="matchBoard.grid[idx - 1].tier" class="cell-stars">{{ "★".repeat(matchBoard.grid[idx - 1].tier!) }}</span>
+                <div v-if="cell" class="cell-unit" :class="{ missing: !cell.held }">
+                  <img loading="lazy" :src="cell.unit.icon" :alt="cell.unit.name" class="cell-icon" :style="{ borderColor: costColor(cell.unit.cost) }" />
+                  <span v-if="cell.tier" class="cell-stars">{{ "★".repeat(cell.tier) }}</span>
+                  <span v-if="!cell.held" class="cell-missing" title="本局未持有该棋子">缺</span>
                 </div>
               </div>
             </div>

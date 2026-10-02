@@ -226,8 +226,24 @@ async fn get_teamplanner_map(state: State<'_, AppState>) -> Result<serde_json::V
     Ok(serde_json::Value::Object(map))
 }
 
-#[tauri::command]
-fn get_shop_odds() -> Vec<ShopOddsLevel> {
+/// 内嵌补丁配置表（商店概率/规则/节奏；随版本发布，见 patch_tables.json）。
+/// 数值会随 tftable_data.json 的 patchTables 在线更新，此处仅为内置兜底。
+const PATCH_TABLES_EMBEDDED: &str = include_str!("../patch_tables.json");
+
+fn embedded_patch_tables() -> serde_json::Value {
+    serde_json::from_str(PATCH_TABLES_EMBEDDED).unwrap_or_else(|_| serde_json::json!({}))
+}
+
+/// 读取补丁配置表：优先 tftable_data.json 内 patchTables（跟随在线更新），否则内嵌默认。
+fn patch_tables(state: State<'_, AppState>) -> serde_json::Value {
+    get_tftable_data(state)
+        .ok()
+        .and_then(|v| v.get("patchTables").cloned())
+        .filter(|v| !v.is_null())
+        .unwrap_or_else(embedded_patch_tables)
+}
+
+fn default_shop_odds() -> Vec<ShopOddsLevel> {
     const ODDS: [[f32; 5]; 10] = [
         [100.0, 0.0, 0.0, 0.0, 0.0],
         [100.0, 0.0, 0.0, 0.0, 0.0],
@@ -249,8 +265,34 @@ fn get_shop_odds() -> Vec<ShopOddsLevel> {
         .collect()
 }
 
+fn shop_odds_from(v: &serde_json::Value) -> Option<Vec<ShopOddsLevel>> {
+    let arr = v.get("shop_odds")?.as_array()?;
+    let out: Vec<ShopOddsLevel> = arr
+        .iter()
+        .enumerate()
+        .filter_map(|(i, row)| {
+            row.as_array().map(|odds| ShopOddsLevel {
+                level: (i + 1) as i32,
+                odds: odds
+                    .iter()
+                    .filter_map(|x| x.as_f64().map(|f| f as f32))
+                    .collect(),
+            })
+        })
+        .collect();
+    if out.is_empty() {
+        None
+    } else {
+        Some(out)
+    }
+}
+
 #[tauri::command]
-fn get_game_rules() -> Vec<RulesSection> {
+fn get_shop_odds(state: State<'_, AppState>) -> Vec<ShopOddsLevel> {
+    shop_odds_from(&patch_tables(state)).unwrap_or_else(default_shop_odds)
+}
+
+fn default_game_rules() -> Vec<RulesSection> {
     vec![
         RulesSection {
             title: "利息机制".into(),
@@ -292,6 +334,24 @@ fn get_game_rules() -> Vec<RulesSection> {
             ],
         },
     ]
+}
+
+fn game_rules_from(v: &serde_json::Value) -> Option<Vec<RulesSection>> {
+    let arr = v.get("game_rules")?.as_array()?;
+    let out: Vec<RulesSection> = arr
+        .iter()
+        .filter_map(|r| serde_json::from_value(r.clone()).ok())
+        .collect();
+    if out.is_empty() {
+        None
+    } else {
+        Some(out)
+    }
+}
+
+#[tauri::command]
+fn get_game_rules(state: State<'_, AppState>) -> Vec<RulesSection> {
+    game_rules_from(&patch_tables(state)).unwrap_or_else(default_game_rules)
 }
 
 /// 读取 tftable_data.json（网站元数据快照）。

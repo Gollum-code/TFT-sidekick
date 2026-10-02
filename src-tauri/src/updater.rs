@@ -176,6 +176,16 @@ pub async fn update_tftable_data() -> Result<Value, String> {
     }
     merged.insert("compDetails".into(), Value::Object(details));
 
+    // 补丁配置表（商店概率/规则/节奏）不来自 tftable.cc，跨更新沿用旧文件内容，
+    // 旧文件缺失时回落到内嵌默认 patch_tables.json。
+    let pt = serde_json::from_str::<Value>(include_str!("../../tftable_data.json"))
+        .ok()
+        .and_then(|o| o.get("patchTables").cloned())
+        .filter(|v| !v.is_null())
+        .or_else(|| serde_json::from_str(include_str!("../patch_tables.json")).ok())
+        .unwrap_or_else(|| json!({}));
+    merged.insert("patchTables".into(), pt);
+
     // 顶层元信息
     if let Some(pp) = &meta_pp {
         let ms = pp.get("metaStats").cloned().unwrap_or_else(|| json!({}));

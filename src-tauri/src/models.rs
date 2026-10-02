@@ -165,13 +165,13 @@ pub struct TraitData {
     pub units: Vec<TraitUnit>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ShopOddsLevel {
     pub level: i32,
     pub odds: Vec<f32>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RulesSection {
     pub title: String,
     pub rows: Vec<Vec<String>>,
