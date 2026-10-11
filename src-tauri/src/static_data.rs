@@ -21,6 +21,34 @@ use crate::models::{
 const CDRAGON_URL: &str = "https://raw.communitydragon.org/latest/cdragon/tft/zh_cn.json";
 const ICON_BASE: &str = "https://raw.communitydragon.org/latest/game/";
 
+/// 海克斯稀有度表（`apiName` → silver/gold/prismatic/standard）。
+/// 由 `tools/gen_augment_tiers.py` 从 CDragon `tftitems.json`（英文名含
+/// Silver / Gold / Prismatic 或罗马数字 I/II/III）生成，随版本更新后重新生成。
+const AUGMENT_TIERS: &str = include_str!("../augment_tiers.json");
+
+fn augment_tier_table() -> &'static serde_json::Value {
+    static TABLE: std::sync::OnceLock<serde_json::Value> = std::sync::OnceLock::new();
+    TABLE.get_or_init(|| serde_json::from_str(AUGMENT_TIERS).unwrap_or(serde_json::json!({})))
+}
+
+/// 查询海克斯稀有度。表内命中优先；未收录（新赛季）时用命名启发式兜底：
+/// apiName 含 Prismatic/Silver/Gold → 对应档，否则 standard。
+fn augment_tier(id: &str) -> Option<&'static str> {
+    if let Some(v) = augment_tier_table().get(id).and_then(|x| x.as_str()) {
+        return Some(v);
+    }
+    let lower = id.to_ascii_lowercase();
+    if lower.contains("prismatic") {
+        Some("prismatic")
+    } else if lower.contains("silver") {
+        Some("silver")
+    } else if lower.contains("gold") {
+        Some("gold")
+    } else {
+        Some("standard")
+    }
+}
+
 #[derive(Debug, Error)]
 pub enum StaticDataError {
     #[error("下载静态数据失败: {0}")]
@@ -486,7 +514,7 @@ impl StaticData {
 
     // ---- M4：隐藏数据表查询 ----
 
-    /// 当前赛季的装备：可合成成品（composition 非空）+ 散件（含 "Component"），
+    /// 当前赛季装备：可合成成品（composition 非空）+ 散件（含 "Component"），
     /// 排除海克斯/升级等噪音。
     pub fn items(&self) -> Vec<ItemData> {
         let prefix = format!("{}_", self.set_code);
@@ -501,13 +529,14 @@ impl StaticData {
                 icon_url: info.icon.as_deref().map(Self::icon_url).unwrap_or_default(),
                 composition: info.composition.clone(),
                 desc: info.desc.clone(),
+                tier: None,
             })
             .collect();
         out.sort_by(|a, b| a.name.cmp(&b.name));
         out
     }
 
-    /// 当前赛季海克斯（isAugment + 当前赛季前缀）。
+    /// 当前赛季海克斯（isAugment + 当前赛季前缀），附带稀有度分级。
     pub fn augments(&self) -> Vec<ItemData> {
         let prefix = format!("{}_", self.set_code);
         let mut out: Vec<ItemData> = self
@@ -520,6 +549,11 @@ impl StaticData {
                 icon_url: info.icon.as_deref().map(Self::icon_url).unwrap_or_default(),
                 composition: Vec::new(),
                 desc: info.desc.clone(),
+                tier: Some(
+                    augment_tier(id)
+                        .map(|t| t.to_string())
+                        .unwrap_or_else(|| "standard".into()),
+                ),
             })
             .collect();
         out.sort_by(|a, b| a.name.cmp(&b.name));

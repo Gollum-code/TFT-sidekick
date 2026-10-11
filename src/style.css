@@ -2999,6 +2999,22 @@ button.small {
   margin-left: 6px;
   vertical-align: middle;
 }
+/* 按稀有度着色：白银 / 黄金 / 棱彩 */
+.augment-tier.tier-silver {
+  color: #cfd6e0;
+  border-color: rgba(207, 214, 224, 0.35);
+  background: rgba(207, 214, 224, 0.08);
+}
+.augment-tier.tier-gold {
+  color: var(--gold-bright);
+  border-color: rgba(240, 194, 75, 0.4);
+  background: rgba(240, 194, 75, 0.08);
+}
+.augment-tier.tier-prismatic {
+  color: #e08cff;
+  border-color: rgba(224, 140, 255, 0.45);
+  background: rgba(224, 140, 255, 0.1);
+}
 
 /* ===== 阵容列表收藏 ===== */
 button.favorited {

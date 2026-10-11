@@ -3,7 +3,6 @@ mod lcu;
 mod live_client;
 mod ocr;
 pub mod models;
-pub mod riot;
 pub mod static_data;
 pub mod updater;
 
@@ -17,9 +16,8 @@ use tauri::{AppHandle, Emitter, Manager, State};
 use crate::lcu::LcuClient;
 use crate::live_client::GameClientReader;
 use crate::models::{
-    AppInfo, ChampionData, EnrichedMatch, ItemData, MatchSummary, HeroItemRow, LiveGameState,
-    MetaComp, MetaItem, MetaResult, NamedCount, Profile, RulesSection, ShopOddsLevel, Stats,
-    SyncResult, TraitData,
+    AppInfo, ChampionData, EnrichedMatch, ItemData, MatchSummary, LiveGameState, NamedCount, Profile,
+    RulesSection, ShopOddsLevel, Stats, SyncResult, TraitData,
 };
 use crate::static_data::StaticData;
 
@@ -29,7 +27,6 @@ struct AppState {
     game_client: GameClientReader,
     static_data: Arc<tokio::sync::Mutex<Option<Arc<StaticData>>>>,
     data_dir: PathBuf,
-    meta_json_path: PathBuf,
 }
 
 /// 缓存文件是否明显过时（超过 7 天，补丁通常每周更新）。
@@ -358,11 +355,7 @@ fn get_game_rules(state: State<'_, AppState>) -> Vec<RulesSection> {
 #[tauri::command]
 fn get_tftable_data(state: State<'_, AppState>) -> Result<serde_json::Value, String> {
     const EMBEDDED: &str = include_str!("../../tftable_data.json");
-    let path = state
-        .meta_json_path
-        .parent()
-        .unwrap()
-        .join("tftable_data.json");
+    let path = state.data_dir.join("tftable_data.json");
     let raw = if path.exists() {
         std::fs::read_to_string(&path).map_err(|e| e.to_string())?
     } else {
@@ -388,7 +381,11 @@ async fn check_tftable_update(state: State<'_, AppState>) -> Result<serde_json::
     };
 
     // 抓取 tftable.cc/meta 页面
-    let client = reqwest::Client::new();
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(20))
+        .connect_timeout(std::time::Duration::from_secs(8))
+        .build()
+        .map_err(|e| e.to_string())?;
     let html = client
         .get("https://tftable.cc/meta")
         .header("User-Agent", "TFT-Sidekick/0.1")
@@ -452,12 +449,8 @@ async fn check_tftable_update(state: State<'_, AppState>) -> Result<serde_json::
 async fn update_tftable_data(state: State<'_, AppState>) -> Result<serde_json::Value, String> {
     let new_data = updater::update_tftable_data().await?;
 
-    // 保存到 data_dir
-    let path = state
-        .meta_json_path
-        .parent()
-        .unwrap()
-        .join("tftable_data.json");
+    // 保存到应用数据目录
+    let path = state.data_dir.join("tftable_data.json");
     let json_str = serde_json::to_string_pretty(&new_data).map_err(|e| e.to_string())?;
     std::fs::write(&path, &json_str).map_err(|e| format!("写入 tftable_data.json 失败: {e}"))?;
 
@@ -467,86 +460,6 @@ async fn update_tftable_data(state: State<'_, AppState>) -> Result<serde_json::V
         "patch": new_data.get("patch").and_then(|v| v.as_str()).unwrap_or(""),
         "sample_size": new_data.get("sampleSize").and_then(|v| v.as_u64()).unwrap_or(0),
     }))
-}
-
-/// 项目里的 meta.json（旧数据，保留兼容）。
-#[tauri::command]
-async fn get_meta(state: State<'_, AppState>) -> Result<MetaResult, String> {
-    let path = &state.meta_json_path;
-    if !path.exists() {
-        return Err("meta.json 未准备。请先运行 `cargo run --bin crawl_meta` 生成".into());
-    }
-    let raw = std::fs::read_to_string(path).map_err(|e| e.to_string())?;
-    let v: serde_json::Value =
-        serde_json::from_str(&raw).map_err(|e| format!("meta.json 格式错误: {e}"))?;
-
-    let comps: Vec<MetaComp> = serde_json::from_value(
-        v.get("comps")
-            .cloned()
-            .unwrap_or(serde_json::json!([])),
-    )
-    .unwrap_or_default();
-    let items: Vec<MetaItem> = serde_json::from_value(
-        v.get("items")
-            .cloned()
-            .unwrap_or(serde_json::json!([])),
-    )
-    .unwrap_or_default();
-    let hero_items: Vec<HeroItemRow> = serde_json::from_value(
-        v.get("hero_items")
-            .cloned()
-            .unwrap_or(serde_json::json!([])),
-    )
-    .unwrap_or_default();
-    let named_comps: Vec<crate::models::NamedComp> = serde_json::from_value(
-        v.get("named_comps")
-            .cloned()
-            .unwrap_or(serde_json::json!([])),
-    )
-    .unwrap_or_default();
-
-    let comp_details: Vec<crate::models::CompDetail> = serde_json::from_value(
-        v.get("comp_details")
-            .cloned()
-            .unwrap_or(serde_json::json!([])),
-    )
-    .unwrap_or_default();
-    let daily: Vec<crate::models::DailyRow> = serde_json::from_value(
-        v.get("daily").cloned().unwrap_or(serde_json::json!([])),
-    )
-    .unwrap_or_default();
-    let counters: Vec<crate::models::CounterRow> = serde_json::from_value(
-        v.get("counters").cloned().unwrap_or(serde_json::json!([])),
-    )
-    .unwrap_or_default();
-
-    let cost_win: Vec<f64> = serde_json::from_value(
-        v.get("cost_win").cloned().unwrap_or(serde_json::json!([])),
-    )
-    .unwrap_or_default();
-    let cost_top4: Vec<f64> = serde_json::from_value(
-        v.get("cost_top4").cloned().unwrap_or(serde_json::json!([])),
-    )
-    .unwrap_or_default();
-
-    let sample_count = v
-        .get("sample_count")
-        .and_then(|x| x.as_u64())
-        .unwrap_or(0) as u32;
-
-    Ok(MetaResult {
-        comps,
-        named_comps,
-        items,
-        hero_items,
-        comp_details,
-        daily,
-        counters,
-        cost_win,
-        cost_top4,
-        sample_count,
-        added_count: 0,
-    })
 }
 
 /// 对局中悬浮窗的个人信息：段位 + 历史战绩摘要。
@@ -562,20 +475,8 @@ async fn get_profile(state: State<'_, AppState>) -> Result<Profile, String> {
 
     let (wins, top4, sum_placement, total) = {
         let db = state.db.lock().map_err(|e| e.to_string())?;
-        let ms = db.list_matches(100).map_err(|e| e.to_string())?;
-        let mut wins = 0u32;
-        let mut top4 = 0u32;
-        let mut sum_placement = 0f64;
-        for m in &ms {
-            if m.placement == 1 {
-                wins += 1;
-            }
-            if m.placement <= 4 {
-                top4 += 1;
-            }
-            sum_placement += m.placement as f64;
-        }
-        (wins, top4, sum_placement, ms.len() as u32)
+        let st = db.get_stats(None).map_err(|e| e.to_string())?;
+        (st.wins, st.top4, st.sum_placement, st.total)
     };
 
     Ok(Profile {
@@ -587,7 +488,7 @@ async fn get_profile(state: State<'_, AppState>) -> Result<Profile, String> {
         win_rate: if total > 0 { wins as f64 / total as f64 } else { 0.0 },
         top4_rate: if total > 0 { top4 as f64 / total as f64 } else { 0.0 },
         avg_placement: if total > 0 {
-            sum_placement / total as f64
+            sum_placement as f64 / total as f64
         } else {
             0.0
         },
@@ -796,22 +697,26 @@ fn restore_window_state(app: &tauri::AppHandle) {
         None
     };
 
-    for (label, min_w, min_h) in [("main", 400u32, 300u32), ("overlay", 200, 200)] {
+    for label in ["main", "overlay"] {
         let Some(entry) = get_entry(label) else {
             continue;
         };
         let Some(w) = app.get_webview_window(label) else {
             continue;
         };
-        if let (Some(wd), Some(h)) = (
-            entry.get("width").and_then(|x| x.as_u64()),
-            entry.get("height").and_then(|x| x.as_u64()),
-        ) {
-            if wd >= min_w as u64 && h >= min_h as u64 && label == "main" {
-                let _ = w.set_size(tauri::PhysicalSize {
-                    width: wd as u32,
-                    height: h as u32,
-                });
+        // 仅 main 可缩放（overlay 在 tauri.conf.json 中 resizable=false），
+        // 因此只对 main 恢复尺寸；两个窗口都恢复位置。
+        if label == "main" {
+            if let (Some(wd), Some(h)) = (
+                entry.get("width").and_then(|x| x.as_u64()),
+                entry.get("height").and_then(|x| x.as_u64()),
+            ) {
+                if wd >= 400 && h >= 300 {
+                    let _ = w.set_size(tauri::PhysicalSize {
+                        width: wd as u32,
+                        height: h as u32,
+                    });
+                }
             }
         }
         if let (Some(x), Some(y)) = (
@@ -913,35 +818,28 @@ fn ocr_region(file_name: &str, region: (i32, i32, i32, i32)) -> Result<String, S
 /// 更新 overlay 中显示的对局状态（由 gameflow_loop 调用）。
 #[tauri::command]
 async fn set_overlay_state(state: State<'_, AppState>, app: AppHandle) -> Result<serde_json::Value, String> {
-    let phase = {
-        let mut lcu = state.lcu.lock().await;
-        if !lcu.is_connected() {
-            lcu.discover_and_connect().map_err(|e| e.to_string())?;
-        }
-        lcu.gameflow_phase().await.map_err(|e| e.to_string())?
-    };
-    let rank = {
-        let lcu = state.lcu.lock().await;
-        lcu.ranked_stats().await.map_err(|e| e.to_string())?
-    };
-    let me = {
-        let lcu = state.lcu.lock().await;
-        lcu.current_summoner().await.map_err(|e| e.to_string())?
-    };
-    let _ = app.emit("overlay-state", serde_json::json!({
+    let mut lcu = state.lcu.lock().await;
+    if !lcu.is_connected() {
+        lcu.discover_and_connect().map_err(|e| e.to_string())?;
+    }
+    // 三个端点相互独立，并发请求，把每 5s 轮询的耗时从 3×RTT 降到 1×RTT。
+    let (phase, rank, me) = tokio::join!(
+        lcu.gameflow_phase(),
+        lcu.ranked_stats(),
+        lcu.current_summoner(),
+    );
+    let phase = phase.map_err(|e| e.to_string())?;
+    let rank = rank.map_err(|e| e.to_string())?;
+    let me = me.map_err(|e| e.to_string())?;
+    let payload = serde_json::json!({
         "phase": phase,
         "summoner": me.game_name,
         "rank_tier": rank.tier,
         "rank_division": rank.division,
         "rank_lp": rank.league_points,
-    }));
-    Ok(serde_json::json!({
-        "phase": phase,
-        "summoner": me.game_name,
-        "rank_tier": rank.tier,
-        "rank_division": rank.division,
-        "rank_lp": rank.league_points,
-    }))
+    });
+    let _ = app.emit("overlay-state", payload.clone());
+    Ok(payload)
 }
 
 fn show_main_window(app: &AppHandle) {
@@ -957,8 +855,14 @@ fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
     let quit = MenuItem::with_id(app, "quit", "退出", true, None::<&str>)?;
     let menu = Menu::with_items(app, &[&show, &refresh, &quit])?;
 
+    let Some(icon) = app.default_window_icon().cloned() else {
+        // 没有默认图标时直接跳过托盘，避免 unwrap 导致启动崩溃。
+        eprintln!("[tft-sidekick] 缺少默认窗口图标，跳过托盘图标");
+        return Ok(());
+    };
+
     TrayIconBuilder::new()
-        .icon(app.default_window_icon().unwrap().clone())
+        .icon(icon)
         .tooltip("TFT Sidekick")
         .menu(&menu)
         .show_menu_on_left_click(false)
@@ -998,24 +902,12 @@ pub fn run() {
             let game_client_loop = game_client.clone();
             let static_data = Arc::new(tokio::sync::Mutex::new(None::<Arc<StaticData>>));
 
-            // 定位 meta.json：优先项目根目录（开发/工具生成处），否则数据目录
-            let meta_json_path = {
-                let project_root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-                    .join("../meta.json");
-                if project_root.exists() {
-                    project_root
-                } else {
-                    data_dir.join("meta.json")
-                }
-            };
-
             app.manage(AppState {
                 db: db.clone(),
                 lcu: lcu.clone(),
                 game_client,
                 static_data: static_data.clone(),
                 data_dir: data_dir.clone(),
-                meta_json_path,
             });
 
             setup_tray(app.handle())?;
@@ -1052,7 +944,6 @@ pub fn run() {
             get_teamplanner_map,
             get_shop_odds,
             get_game_rules,
-            get_meta,
             get_tftable_data,
             check_tftable_update,
             update_tftable_data,

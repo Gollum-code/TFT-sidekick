@@ -114,6 +114,8 @@ impl Default for LcuClient {
 
 impl LcuClient {
     pub fn new() -> Self {
+        // LCU 使用自签名证书，客户端无法预置其根证书；
+        // 因此这里仅对“本机回环地址”放宽证书校验（见 get_json 中的 host 白名单校验）。
         let client = reqwest::Client::builder()
             .danger_accept_invalid_certs(true)
             .timeout(std::time::Duration::from_secs(8))
@@ -146,6 +148,11 @@ impl LcuClient {
 
     async fn get_json(&self, path: &str) -> Result<serde_json::Value, LcuError> {
         let creds = self.credentials.as_ref().ok_or(LcuError::NotConnected)?;
+        // 仅允许访问本机回环地址（端口来自本地 lockfile/日志，且 host 强制为 127.0.0.1）；
+        // 双重校验防止端口被篡改后把不校验证书的客户端用于外部主机。
+        if !(1..=65535).contains(&creds.port) {
+            return Err(LcuError::Request("非法端口".into()));
+        }
         let url = format!("https://127.0.0.1:{}{}", creds.port, path);
         let resp = self
             .client

@@ -9,6 +9,10 @@ src-tauri/gen/schemas/
 # Logs
 *.log
 
+# Python (tools/)
+__pycache__/
+*.pyc
+
 # Env
 .env
 .env.*
@@ -20,7 +24,7 @@ Thumbs.db
 # æœ¬åœ°ç”Ÿæˆæ•°æ®
 lcu-probe-result.json
 
-# ÁÙÊ±²âÊÔÊä³ö
+# ä¸´æ—¶ç”Ÿæˆæ–‡ä»¶
 meta_*.txt
 test_output.txt
 comps.txt

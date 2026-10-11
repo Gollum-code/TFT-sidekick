@@ -1,6 +1,18 @@
 <script setup lang="ts">
 import { NAME_MAP, unitName, itemName, traitName, unitNameEn, unitCost } from './lib/tftable-helpers';
-import { computed, onMounted, ref, watch } from "vue";
+import type {
+  ChampionData,
+  ItemData,
+  RulesSection,
+  ShopOddsLevel,
+  TraitData,
+  TFCompStat,
+  TFCompositionCard,
+  TFItemGuideEntry,
+  TFTtableData,
+  TFUnitItem,
+} from './composables/useTftData';
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -83,356 +95,6 @@ interface Stats {
   placement_dist: number[];
   top_traits: NamedCount[];
   top_units: NamedCount[];
-}
-
-interface ItemData {
-  id: string;
-  name: string;
-  icon_url: string;
-  composition: string[];
-  desc: string;
-}
-
-interface ChampionData {
-  id: string;
-  name: string;
-  icon_url: string;
-  cost: number;
-  hp: number;
-  damage: number;
-  armor: number;
-  magic_resist: number;
-  mana: number;
-  ability_name: string;
-  ability_desc: string;
-  traits: string[];
-}
-
-interface TraitTierData {
-  min_units: number;
-  max_units: number;
-  style: number;
-}
-
-interface TraitUnit {
-  id: string;
-  name: string;
-  icon_url: string;
-}
-
-interface TraitData {
-  id: string;
-  name: string;
-  icon_url: string;
-  desc: string;
-  tiers: TraitTierData[];
-  units: TraitUnit[];
-}
-
-interface ShopOddsLevel {
-  level: number;
-  odds: number[];
-}
-
-interface RulesSection {
-  title: string;
-  rows: string[][];
-}
-
-// ===== TFTable 数据（tftable_data.json） =====
-
-interface TFTraitShare {
-  trait_id: string;
-  trait_name_cn: string;
-  trait_name_en: string;
-  tier: number | null;
-  units_required: number | null;
-  wins: number;
-}
-
-interface TFCompShare {
-  slug: string;
-  wins: number;
-}
-
-interface TFMetaStats {
-  metadata: { patch: string; ranked_tiers: string[]; total_sample_size: number; timestamp: string };
-  winShare: { sample_size: number; compositions: TFCompShare[]; traits: TFTraitShare[] };
-  top4Share: { sample_size: number; compositions: TFCompShare[]; traits: TFTraitShare[] };
-  balance: {
-    involution_index: number;
-    involution_k: number;
-    diversity_index: number;
-    notes: { involution: string; diversity: string };
-  };
-  core_cost_share: { win_share: Record<string, number>; top4_share: Record<string, number> };
-}
-
-interface TFCompositionCard {
-  key: string;
-  slug: string;
-  display_name_cn: string;
-  display_name_en: string;
-  compIcon: string;
-  compCost: number;
-  averagePlacementValue: number;
-}
-
-interface TFStrengthSeries {
-  key: string;
-  slug: string;
-  points: { date: string; strength: number }[];
-}
-
-interface TFCompStrengthTrends {
-  patch: string;
-  comparisonPatch: string;
-  generatedAt: string;
-  dates: string[];
-  series: TFStrengthSeries[];
-  patchChangeIndices: number[];
-  dateToPatch: Record<string, string>;
-  balance_daily: Record<
-    string,
-    {
-      involution_index: number;
-      diversity_index: number;
-      win_share_by_cost: Record<string, number>;
-      top4_share_by_cost: Record<string, number>;
-      delta_vs_previous_day: Record<string, number> | null;
-    }
-  >;
-}
-
-interface TFCompSummary {
-  slug: string;
-  avgPlacementValue: number;
-  trendDelta: number;
-  playRateDelta: number;
-  winShareDelta: number;
-}
-
-interface TFCompStat {
-  strength: number;
-  playRate: number;
-  strengthDelta: number;
-}
-
-interface TFRowDelta {
-  text: string;
-  positive: boolean | null;
-  value: number | null;
-}
-
-interface TFTrendRow {
-  slug: string;
-  name: string;
-  playRate: string;
-  playRateDelta: TFRowDelta;
-  avgPlacement: string;
-  avgPlacementDelta: TFRowDelta;
-  avgPlacementValue: number;
-  versionDeltaAvg: TFRowDelta | null;
-  versionDeltaPlay: TFRowDelta | null;
-  versionDeltaValue: number | null;
-  dateMetrics: { date: string; avgPlacement: number }[];
-}
-
-interface TFTrendItem {
-  slug: string;
-  name: string;
-  playRate: string;
-  playRateDelta: TFRowDelta;
-  winShare: string | null;
-  winShareDelta: TFRowDelta | null;
-  top4Share: string | null;
-  top4ShareDelta: TFRowDelta | null;
-  avgPlacement: string;
-  avgPlacementDelta: TFRowDelta;
-}
-
-interface TFUnitItem {
-  unitId: string;
-  unitCost: number;
-  unitPriority: number | null;
-  buckets: {
-    Core: { itemId: string; necessity: number; priorityScore: number | null }[];
-    Important: { itemId: string; necessity: number; priorityScore: number | null }[];
-    Optional: { itemId: string; necessity: number; priorityScore: number | null }[];
-    HighFrequency: { itemId: string; necessity: number; priorityScore: number | null }[];
-  };
-  bisItemIds: string[];
-  artifacts: { itemId: string; avgPlacement: number }[];
-  coreCompStrengths: { comp_key: string }[];
-}
-
-interface TFItemGuideEntry {
-  itemId: string;
-  itemName: string;
-  costBuckets: Record<string, { unitId: string; normalized: number; necessity: number }[]>;
-  compositions: { slug: string; name: string; unit_id: string }[];
-  type: string;
-}
-
-interface TFTierlistComp {
-  comp_id: string;
-  item_strength: number;
-  top_carrier_unit_id: string;
-  top_pair?: { item_ids: string[] };
-}
-
-interface TFTierlistRow {
-  artifact_id: string;
-  comps: TFTierlistComp[];
-}
-
-interface TFCompDetailUnit {
-  id: string;
-  name: string;
-  nameCn: string;
-  nameEn: string;
-  cost: number;
-  builds: { index: number; items: { id: string }[] }[];
-}
-
-interface TFCompDetailTrait {
-  id: string;
-  icon: string;
-  unitsRequired: number;
-  tierIndex: number | null;
-}
-
-interface TFPriorityRow {
-  unitId: string;
-  unitCost: number;
-  unitPriority: number | null;
-  bisItemIds: string[] | null;
-  buckets: {
-    Core: { itemId: string; necessity: number; priorityScore: number | null }[];
-    Important: { itemId: string; necessity: number; priorityScore: number | null }[];
-    Optional: { itemId: string; necessity: number; priorityScore: number | null }[];
-    HighFrequency: { itemId: string; necessity: number; priorityScore: number | null }[];
-  };
-}
-
-interface TFArtifactPick {
-  kind: string;
-  artifactId: string;
-  artifactName: string;
-  artifactIcon: string;
-  carrierUnitId: string;
-  carrierName: string;
-  carrierIcon: string;
-  carrierCost: number;
-  strength: number;
-  topPair: { items: { itemId: string; name: string; icon: string }[] } | null;
-}
-
-interface TFCompDetail {
-  slug: string;
-  key: string;
-  title: string;
-  titles: Record<string, string>;
-  overview: {
-    stats: { avgPlacement: string; avgPlacementValue: number; winRate: string; winRateValue: number };
-    coreUnits: TFCompDetailUnit[];
-    traits: TFCompDetailTrait[];
-    teamCode: string;
-  };
-  summary: { sampleSize: number; winRate: string };
-  metatftLink?: string;
-  filters?: { expr: string; carrierExclusions: string[]; exprByLocale: Record<string, string>; carrierExclusionsByLocale: Record<string, string> };
-  variants: {
-    is_primary: boolean;
-    variant_id: string;
-    variant_label: string;
-    clustered_stats: { share: number; avg_placement: number };
-    units: { id: string }[];
-    traits: TFCompDetailTrait[];
-  }[];
-  priorityMatrixRows: TFPriorityRow[];
-  specialGroups: {
-    artifacts: { unitId: string; items: { id: string; avgPlacement: number }[] }[];
-    radiants: { unitId: string; items: { id: string; avgPlacement: number }[] }[];
-    emblems: {
-      itemId: string;
-      avgPlacement: number;
-      appearanceRate: number;
-      carriers: { unit_id: string; best: boolean }[];
-    }[];
-  };
-  matchups: {
-    benefits: { key: string; delta: number }[];
-    counteredBy: { key: string; delta: number }[];
-    mutualConstraints: { key: string; delta: number }[];
-  } | null;
-  artifactPicks: { compStrength: number | null; picks: TFArtifactPick[] } | null;
-  dataSource: { patch: string; sample_count: number };
-}
-
-interface TFTtableData {
-  patch: string;
-  ranked_tiers: string[];
-  sampleSize: number;
-  timestamp: string;
-  metaStats: TFMetaStats;
-  compositionCards: TFCompositionCard[];
-  compStrengthTrends: TFCompStrengthTrends;
-  compAtlas: {
-    compositionSummaries: TFCompSummary[];
-    compStats: Record<string, TFCompStat>;
-  };
-  trends: {
-    dateColumns: string[];
-    versionDeltaMode: string;
-    versionDeltaWindowHint: string;
-    compositionRows: TFTrendRow[];
-    compositionTrendUp: TFTrendItem[];
-    compositionTrendDown: TFTrendItem[];
-    winshareTrendUp: TFTrendItem[];
-    winshareTrendDown: TFTrendItem[];
-  };
-  dailyStats: {
-    dateColumns: string[];
-    versionDeltaMode: string;
-    versionDeltaWindowHint: string;
-    compositionRows: TFTrendRow[];
-    compositionTrendUp: TFTrendItem[];
-    compositionTrendDown: TFTrendItem[];
-    winshareTrendUp: TFTrendItem[];
-    winshareTrendDown: TFTrendItem[];
-  };
-  unitItems: TFUnitItem[];
-  itemGuide: {
-    items: TFItemGuideEntry[];
-    artifacts: TFItemGuideEntry[];
-    emblems: TFItemGuideEntry[];
-  };
-  itemTierlist: {
-    generated_at?: string;
-    tabs: {
-      artifacts: { rows: TFTierlistRow[] };
-      "anima-items": { rows: TFTierlistRow[] };
-      emblems: { rows: TFTierlistRow[]; essentials?: TFTierlistRow[] };
-    };
-  };
-  compDetails: Record<string, {
-    composition: TFCompDetail;
-    itemCategories: Record<string, string[]>;
-    unitCategories: Record<string, string[]>;
-  }>;
-  /** 补丁配置表：商店概率/规则/经济节奏（随 tftable_data.json 更新，缺失时前端走内置默认） */
-  patchTables?: {
-    shop_odds?: number[][];
-    game_rules?: { title: string; rows: string[][] }[];
-    econ_timeline?: {
-      stage: string;
-      targetLevel: number;
-      phase_label: string;
-      items: { label: string; desc: string }[];
-    }[];
-    level_guide?: { level: number; stage: string; board: number; focus: string; odds: number[] }[];
-  };
 }
 
 const view = ref<
@@ -1964,10 +1626,15 @@ const TF = "https://tftable.cc";
 function tfImg(path: string | undefined): string {
   return path ? (path.startsWith("/") ? TF + path : path) : "";
 }
-function unitIcon(id: string): string { return TF + "/set18/avatar-webp/" + id + ".webp?v=5"; }
-function itemIcon(id: string): string { return TF + "/set18/item-webp/" + id + ".webp?v=4"; }
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-function traitIcon(id: string): string { return TF + "/set18/trait-svg/" + id + ".svg?v=1"; }
+// 图标路径按当前补丁推导赛季号（如 patch "18.3b" → set18），避免赛季更替后 404。
+const setSlug = computed(() => {
+  const patch = tftData.value?.patch ?? tftData.value?.metaStats?.metadata?.patch ?? "";
+  const m = /^(\d+)/.exec(patch.trim());
+  return m ? `set${m[1]}` : "set18";
+});
+function unitIcon(id: string): string { return id ? `${TF}/${setSlug.value}/avatar-webp/${id}.webp?v=5` : ""; }
+function itemIcon(id: string): string { return id ? `${TF}/${setSlug.value}/item-webp/${id}.webp?v=4` : ""; }
+function traitIcon(id: string): string { return id ? `${TF}/${setSlug.value}/trait-svg/${id}.svg?v=1` : ""; }
 
 // ===== 设置页 =====
 const updateCheck = ref<{
@@ -2088,6 +1755,16 @@ function startAutoRefresh() {
     }
   }, 5 * 60 * 1000);
 }
+
+// overlay 的实时轮询定时器（对局中每 5s 刷新段位与 2999 实时状态）
+let overlayTimer: ReturnType<typeof setInterval> | null = null;
+
+onBeforeUnmount(() => {
+  if (autoRefreshTimer) clearInterval(autoRefreshTimer);
+  if (overlayTimer) clearInterval(overlayTimer);
+  autoRefreshTimer = null;
+  overlayTimer = null;
+});
 
 // === helpers ===
 function cardOf(slug: string): TFCompositionCard {
@@ -2273,13 +1950,26 @@ function setAugmentSearch(v: string) {
 const augmentTier = ref<"all" | "silver" | "gold" | "prismatic">("all");
 const filteredAugmentRows = computed(() => {
   const q = _augmentSearchQ.value.toLowerCase();
-  return augments.value.filter((a) => !q || a.name.toLowerCase().includes(q));
+  return augments.value.filter((a) => {
+    // 稀有度筛选（standard 归入「全部」）
+    if (augmentTier.value !== "all" && (a.tier || "standard") !== augmentTier.value) {
+      return false;
+    }
+    return !q || a.name.toLowerCase().includes(q) || a.id.toLowerCase().includes(q);
+  });
 });
-function augmentTierLabel(id: string): string {
-  if (/silver/i.test(id)) return "白银";
-  if (/gold/i.test(id)) return "黄金";
-  if (/prismatic/i.test(id)) return "棱彩";
-  return "";
+/** tier（来自 CDragon tftitems 数据）→ 中文标签 */
+function augmentTierLabel(tier: string | null | undefined): string {
+  switch (tier) {
+    case "silver":
+      return "白银";
+    case "gold":
+      return "黄金";
+    case "prismatic":
+      return "棱彩";
+    default:
+      return "常规";
+  }
 }
 
 // ===== 阵容列表（预设 + 收藏） =====
@@ -2751,7 +2441,7 @@ onMounted(async () => {
     await listen<any>("overlay-live", (e) => {
       applyLive(e.payload);
     });
-    setInterval(async () => {
+    overlayTimer = setInterval(async () => {
       refreshOverlay();
       try {
         const s = await invoke<any>("get_live_state");
@@ -2783,14 +2473,21 @@ onMounted(async () => {
   await listen<string>("overlay-phase", (e) => {
     overlayPhase.value = e.payload || "";
   });
-  // 启动后静默检查是否有新补丁（不打扰用户，仅在有更新时提示）
-  setTimeout(() => {
-    checkForUpdate().then(() => {
-      if (updateCheck.value.has_update && !updating.value) {
-        showToast(`检测到新版本 ${updateCheck.value.latest_patch}，可在「设置」中在线更新`);
-      }
-    });
-  }, 3000);
+  // 启动后静默检查是否有新补丁（不打扰用户，仅在有更新时提示）。
+  // 节流：每天最多主动抓取一次 tftable.cc，避免每次启动都发整页请求。
+  const UPDATE_CHECK_KEY = "tft_update_check_day";
+  const lastCheckDay = localStorage.getItem(UPDATE_CHECK_KEY);
+  const today = new Date().toISOString().slice(0, 10);
+  if (lastCheckDay !== today) {
+    localStorage.setItem(UPDATE_CHECK_KEY, today);
+    setTimeout(() => {
+      checkForUpdate().then(() => {
+        if (updateCheck.value.has_update && !updating.value) {
+          showToast(`检测到新版本 ${updateCheck.value.latest_patch}，可在「设置」中在线更新`);
+        }
+      });
+    }, 3000);
+  }
 
   await listen<MatchSummary | null>("match-ended", (e) => {
     loadMatches();
@@ -4217,7 +3914,18 @@ onMounted(async () => {
         </header>
         <div class="tabs tabs-group">
           <button class="tab" :class="{ active: augmentTier === 'all' }" @click="augmentTier = 'all'">全部</button>
-          <button v-for="t in [{k:'silver',label:'白银'},{k:'gold',label:'黄金'},{k:'prismatic',label:'棱彩'}]" :key="t.k" class="tab" :class="{ active: augmentTier === t.k }" @click="augmentTier = t.k as any">{{ t.label }}</button>
+          <button
+            v-for="t in [
+              { k: 'standard', label: '常规' },
+              { k: 'silver', label: '白银' },
+              { k: 'gold', label: '黄金' },
+              { k: 'prismatic', label: '棱彩' },
+            ]"
+            :key="t.k"
+            class="tab"
+            :class="{ active: augmentTier === t.k }"
+            @click="augmentTier = t.k as any"
+          >{{ t.label }}</button>
         </div>
         <div class="augment-list">
           <div v-for="a in filteredAugmentRows" :key="a.id" class="augment-card">
@@ -4225,7 +3933,7 @@ onMounted(async () => {
             <div class="craft-body">
               <div class="craft-name">
                 {{ a.name }}
-                <span v-if="augmentTierLabel(a.id)" class="augment-tier">{{ augmentTierLabel(a.id) }}</span>
+                <span v-if="a.tier && a.tier !== 'standard'" class="augment-tier" :class="'tier-' + a.tier">{{ augmentTierLabel(a.tier) }}</span>
               </div>
               <div class="ability-desc">{{ a.desc || "—" }}</div>
             </div>

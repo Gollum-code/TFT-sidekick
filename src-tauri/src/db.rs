@@ -39,6 +39,9 @@ CREATE TABLE IF NOT EXISTS matches (
     augments        TEXT,
     created_at      TEXT NOT NULL
 );
+-- list_matches 按时间倒序、get_stats 按 queue_id 过滤
+CREATE INDEX IF NOT EXISTS idx_matches_datetime ON matches(game_datetime DESC);
+CREATE INDEX IF NOT EXISTS idx_matches_queue ON matches(queue_id);
 
 CREATE TABLE IF NOT EXISTS match_units (
     id           INTEGER PRIMARY KEY AUTOINCREMENT,

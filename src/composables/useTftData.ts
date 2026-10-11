@@ -40,6 +40,8 @@ export interface ItemData {
   icon_url: string;
   composition: string[];
   desc: string;
+  /** 海克斯稀有度：silver / gold / prismatic / standard；普通装备为空 */
+  tier?: string | null;
 }
 
 export interface ShopOddsLevel {
@@ -148,4 +150,16 @@ export interface TFTtableData {
   itemGuide: { items: TFItemGuideEntry[]; artifacts: TFItemGuideEntry[]; emblems: TFItemGuideEntry[] };
   itemTierlist: { generated_at?: string; tabs: { artifacts: { rows: TFTierlistRow[] }; "anima-items": { rows: TFTierlistRow[] }; emblems: { rows: TFTierlistRow[]; essentials?: TFTierlistRow[] } } };
   compDetails: Record<string, { composition: TFCompDetail; itemCategories: Record<string, string[]>; unitCategories: Record<string, string[]> }>;
+  /** 补丁配置表：商店概率/规则/经济节奏（随 tftable_data.json 更新，缺失时前端走内置默认） */
+  patchTables?: {
+    shop_odds?: number[][];
+    game_rules?: { title: string; rows: string[][] }[];
+    econ_timeline?: {
+      stage: string;
+      targetLevel: number;
+      phase_label: string;
+      items: { label: string; desc: string }[];
+    }[];
+    level_guide?: { level: number; stage: string; board: number; focus: string; odds: number[] }[];
+  };
 }

@@ -2,7 +2,7 @@
 name = "tft-sidekick"
 version = "0.1.0"
 description = "TFT Sidekick - a TFT backend data assistant for CN server"
-authors = ["you"]
+authors = ["TFT Sidekick Team"]
 edition = "2021"
 default-run = "tft-sidekick"
 

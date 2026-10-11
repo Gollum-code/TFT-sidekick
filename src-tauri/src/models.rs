@@ -123,6 +123,9 @@ pub struct ItemData {
     pub icon_url: String,
     pub composition: Vec<String>,
     pub desc: String,
+    /// 海克斯稀有度：silver / gold / prismatic / standard（普通装备为空）。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tier: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -191,132 +194,6 @@ pub struct Profile {
     pub total: u32,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ParticipantComp {
-    pub placement: i32,
-    pub win: bool,
-    pub level: Option<i32>,
-    pub traits: Vec<MatchTrait>,
-    pub units: Vec<MatchUnit>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct RiotMatch {
-    pub match_id: String,
-    pub queue_id: i32,
-    pub tft_set_number: i32,
-    pub game_creation: Option<i64>,
-    pub participants: Vec<ParticipantComp>,
-}
-
-/// 阵容互害/受益：主羁绊 A 与 B 同场时的表现对比。
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CounterRow {
-    pub a_id: String,
-    pub a_name: String,
-    pub b_id: String,
-    pub b_name: String,
-    pub appearances: u32,
-    pub a_avg_placement: f64,
-    pub a_win_rate: f64,
-}
-
-/// 具名阵容：主羁绊 + 核心C位，对应 TFTable 的具体阵容（如永森95）。
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct NamedComp {
-    pub id: String,
-    pub name: String,
-    pub primary_name: String,
-    pub carry_name: String,
-    pub icon_url: String,
-    pub appearances: u32,
-    pub win_rate: f64,
-    pub top4_rate: f64,
-    pub win_share: f64,
-    pub top4_share: f64,
-}
-
-/// 阵容含金币均值（用于今日/趋势聚合）。
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct DailyRow {
-    pub date: String,
-    pub comps: Vec<MetaComp>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct MetaComp {
-    pub id: String,
-    pub name: String,
-    pub icon_url: String,
-    pub appearances: u32,
-    pub win_rate: f64,
-    pub top4_rate: f64,
-    #[serde(default)]
-    pub win_share: f64,
-    #[serde(default)]
-    pub top4_share: f64,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct MetaItem {
-    pub id: String,
-    pub name: String,
-    pub icon_url: String,
-    pub appearances: u32,
-    pub win_rate: f64,
-    pub top4_rate: f64,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct HeroItem {
-    pub id: String,
-    pub name: String,
-    pub icon_url: String,
-    pub appearances: u32,
-    pub win_rate: f64,
-    pub top4_rate: f64,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct HeroItemRow {
-    pub id: String,
-    pub name: String,
-    pub icon_url: String,
-    pub items: Vec<HeroItem>,
-}
-
-/// 阵容详情：某主羁绊阵容的构成与统计。
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CompDetail {
-    pub id: String,
-    pub name: String,
-    pub icon_url: String,
-    pub appearances: u32,
-    pub win_rate: f64,
-    pub top4_rate: f64,
-    pub avg_placement: f64,
-    pub units: Vec<CompUnit>,
-    pub traits: Vec<CompTraitRow>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CompUnit {
-    pub id: String,
-    pub name: String,
-    pub icon_url: String,
-    pub count: u32,
-    pub rate: f64,
-    pub avg_tier: f64,
-    pub items: Vec<HeroItem>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CompTraitRow {
-    pub id: String,
-    pub name: String,
-    pub count: u32,
-}
-
 /// 对局内即时状态（2999 Game Client API）。
 #[derive(Debug, Clone, Serialize, Default)]
 pub struct LiveGameState {
@@ -341,19 +218,4 @@ pub struct LivePlayer {
     pub level: Option<i64>,
     pub rank: Option<i64>,
     pub is_me: bool,
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub struct MetaResult {
-    pub comps: Vec<MetaComp>,
-    pub named_comps: Vec<NamedComp>,
-    pub items: Vec<MetaItem>,
-    pub hero_items: Vec<HeroItemRow>,
-    pub comp_details: Vec<CompDetail>,
-    pub daily: Vec<DailyRow>,
-    pub counters: Vec<CounterRow>,
-    pub cost_win: Vec<f64>,
-    pub cost_top4: Vec<f64>,
-    pub sample_count: u32,
-    pub added_count: u32,
 }
